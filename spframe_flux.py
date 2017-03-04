@@ -215,6 +215,6 @@ pool = multiprocessing.Pool(processes=32)
 no_spc_match = pool.map(calc_flux_for_sky_fibers_for_plate, PLATES)
 pool.terminate()
 
-np.savetxt('no_spc_match.txt',no_spc_match,fmt='%s')
+pickle.dump(no_spc_match, open('no_spc_match.pkl','wb'))
 
 print("Done")
