@@ -149,11 +149,14 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
 
     #Some spframes don't have corresponding spcframe images. These are skipped but saved as a txt file
     no_spc_match = []
-
+    
     for image_num in unique_image_ids:
+        raw_meta = []
+        flux_output = []
+        wave_output = []
         #Start writing file
-        sky_flux_file = open(plate_dir+'/'+str(FILE_IDEN)+'_%s.txt' % image_num, 'wt')
-        sky_flux_file.write('Plate image fiber TAI_beg TAI_end RA DEC Camera Airmass Alt Exptime flux wave\n')
+        #sky_flux_file = open(plate_dir+'/'+str(FILE_IDEN)+'_%s.txt' % image_num, 'wt')
+        #sky_flux_file.write('Plate image fiber TAI_beg TAI_end RA DEC Camera Airmass Alt Exptime flux wave\n')
         
         #Find 4 fits images (b1, b2, r1, r2) associated with this unique image_num
         images = fnmatch.filter(spFrame_files, '*%s*' % image_num)
@@ -195,19 +198,25 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
                     sky = Sky_flux[fiber_id]
                     sky_to_write = sky[limits]
 
+                    raw_meta.append([hdr['PLATEID'], int(fiber), int(image_num), hdr['TAI-BEG'], hdr['TAI-END'], hdr['RA'], hdr['DEC'], hdr['CAMERAS'], hdr['AIRMASS'], hdr['ALT'], hdr['EXPTIME']])
+                    flux_output.append(sky_to_write)
+                    wave_output.append(wave_to_write)
+
                     #Write the file
-                    sky_flux_file.write('%s %d %d %.2f %.2f %.2f %.2f %s %.2f %.2f %.2f ' % (hdr['PLATEID'], int(fiber), int(image_num), hdr['TAI-BEG'], hdr['TAI-END'], hdr['RA'], hdr['DEC'], hdr['CAMERAS'], hdr['AIRMASS'], hdr['ALT'], hdr['EXPTIME']))
-                    for x in sky_to_write:
-                        sky_flux_file.write('%.2f,'% x)
-                    sky_flux_file.write(' ')
-                    for y in wave_to_write:
-                        sky_flux_file.write('%.2f,'% y)
-                    sky_flux_file.write('\n')
+                    #sky_flux_file.write('%s %d %d %.2f %.2f %.2f %.2f %s %.2f %.2f %.2f ' % (hdr['PLATEID'], int(fiber), int(image_num), hdr['TAI-BEG'], hdr['TAI-END'], hdr['RA'], hdr['DEC'], hdr['CAMERAS'], hdr['AIRMASS'], hdr['ALT'], hdr['EXPTIME']))
+                    #for x in sky_to_write:
+                    #    sky_flux_file.write('%.2f,'% x)
+                    #sky_flux_file.write(' ')
+                    #for y in wave_to_write:
+                    #    sky_flux_file.write('%.2f,'% y)
+                    #sky_flux_file.write('\n')
             else:
                 no_spc_match.append([identifier,plate_name])
                 print("Can't find a match for the spcframe")
 
-        sky_flux_file.close
+            pickle.dump(raw_meta,open(plate_dir+'/raw_meta_%s.pkl' % image_num, 'wb'))
+            pickle.dump(flux_output,open(plate_dir+'/boss_flux_%s.pkl' % image_num, 'wb'))
+            pickle.dump(wave_output,open(plate_dir+'/boss_wave_%s.pkl' % image_num, 'wb'))
     return no_spc_match
 
 #multiprocessing speedup
