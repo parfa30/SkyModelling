@@ -35,11 +35,16 @@ you save your data.
 * Add MPI
 
 """
+from __future__ import print_function,division
 import os, glob, fnmatch
-import pickle
+try:
+    import cPickle as pickle
+except:
+    import pickle
 import multiprocessing
 import numpy as np
 from astropy.io import fits
+
 
 #######################
 #. SETUP DIRECTORIES. #
@@ -52,15 +57,68 @@ FILE_IDEN = 'boss_flux' #file identifier, so saved files will be boss_flux_image
 BASE_DIR = '/global/projecta/projectdirs/sdss/data/sdss/dr12/boss/spectro/redux/'
 FOLDERS = ['v5_7_0', 'v5_7_2/']
 
-#Collect directories for each plate for each folder in the spframe director
-PLATES = []
-for folder in FOLDERS:
-    dir = BASE_DIR+folder
-    print("directory: ", dir)
-    for p in os.listdir(dir):
-        pp = os.path.join(dir, p)
-        if os.path.isdir(pp) and p != 'spectra':
-            PLATES.append(pp)
+# detector 
+DETECTORS = {'b1':[[365,635], 'b1'], 'b2':[[365,635], 'b2'], 'r1':[[565,1040], 'b1'], 'r2':[[565,1040], 'b2']}
+
+parallel=True
+MPI=False
+
+def main():
+
+    #Collect directories for each plate for each folder in the spframe director
+    plates = []
+    for folder in FOLDERS:
+        dir = BASE_DIR+folder
+        print("directory: ", dir)
+        for p in os.listdir(dir):
+            pp = os.path.join(dir, p)
+            if os.path.isdir(pp) and p != 'spectra':
+                plates.append(pp)
+
+    ##############
+    #   SCRIPT  #
+    ##############
+
+    #Get Calibration data. This is a preselected observation
+    CAMERAS = ['b1', 'b2', 'r1', 'r2']
+    ## nasty!
+    global CalibVector
+    CalibVector = {}
+    for camera in CAMERAS:
+        hdu = fits.open(BASE_DIR+'/v5_7_0/5399/spFluxcalib-%s-00139379.fits.gz' % camera)
+        data = hdu[0].data
+        CalibVector[camera] = data
+    print("calibration data set")
+
+    #Get Sky Fibers. 
+    with open('sky_fibers.pkl', 'rb') as f:
+        sf_data = pickle.load(f)
+
+    global Sky_fibers
+    Sky_fibers = {}
+    tsky=0
+    for key, values in sf_data.items():
+        plate = key[-4:]
+        Sky_fibers[plate] = values
+        for c,f in values.items():
+            tsky+=len(f)
+    print("Sky fibers identified for %i plates, total sky fibers=%i."%(len(Sky_fibers), tsky))
+
+    if parallel:
+        ## implement if MPI
+        #multiprocessing speedup
+        pool = multiprocessing.Pool(processes=32)
+        no_spc_match = pool.map(calc_flux_for_sky_fibers_for_plate, plates)
+        pool.terminate()
+    else:
+        no_spc_match=[calc_flux_for_sky_fibers_for_plate(p) for p in plates]
+
+    pickle.dump(no_spc_match, open('no_spc_match.pkl','wb'))
+
+    print("Done")
+
+
+
 
 def ffe_to_flux(spframe_hdu, calib_vect, flat_files):
     """ Flat fielded electrons from spFrame to flux in 10^-17 ergs/s/cm2/A.
@@ -92,33 +150,6 @@ def ffe_to_flux(spframe_hdu, calib_vect, flat_files):
     flux = electrons/calib_vect
     
     return flux
-
-##############
-#   SCRIPT  #
-##############
-
-#Get Calibration data. This is a preselected observation
-CAMERAS = ['b1', 'b2', 'r1', 'r2']
-CalibVector = {}
-for camera in CAMERAS:
-    hdu = fits.open(BASE_DIR+'/v5_7_0/5399/spFluxcalib-%s-00139379.fits.gz' % camera)
-    data = hdu[0].data
-    CalibVector[camera] = data
-print("calibration data set")
-
-#Get Sky Fibers. 
-with open('sky_fibers.pkl', 'rb') as f:
-    u = pickle._Unpickler(f)
-    u.encoding = 'latin1'
-    sf_data = u.load() 
-Sky_fibers = {}
-for key, values in sf_data.items():
-    plate = key[-4:]
-    Sky_fibers[plate] = values
-print("Sky fibers identified")
-
-            
-DETECTORS = {'b1':[[365,635], 'b1'], 'b2':[[365,635], 'b2'], 'r1':[[565,1040], 'b1'], 'r2':[[565,1040], 'b2']}
 
 
 def calc_flux_for_sky_fibers_for_plate(plate_folder):
@@ -210,11 +241,6 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
         sky_flux_file.close
     return no_spc_match
 
-#multiprocessing speedup
-pool = multiprocessing.Pool(processes=32)
-no_spc_match = pool.map(calc_flux_for_sky_fibers_for_plate, PLATES)
-pool.terminate()
+if __name__=="__main__":
+          main()
 
-pickle.dump(no_spc_match, open('no_spc_match.pkl','wb'))
-
-print("Done")
