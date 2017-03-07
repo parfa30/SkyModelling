@@ -62,6 +62,7 @@ DETECTORS = {'b1':[[365,635], 'b1'], 'b2':[[365,635], 'b2'], 'r1':[[565,1040], '
 
 parallel=True
 MPI=False
+nplates=0 # use just this many plates
 
 def main():
 
@@ -74,7 +75,9 @@ def main():
             pp = os.path.join(dir, p)
             if os.path.isdir(pp) and p != 'spectra':
                 plates.append(pp)
-
+    if (nplates>0):
+        plates=plates[:nplates]
+                
     ##############
     #   SCRIPT  #
     ##############
@@ -93,7 +96,7 @@ def main():
     #Get Sky Fibers. 
     with open('sky_fibers.pkl', 'rb') as f:
         sf_data = pickle.load(f)
-
+    ## nasty!
     global Sky_fibers
     Sky_fibers = {}
     tsky=0
@@ -108,13 +111,15 @@ def main():
         ## implement if MPI
         #multiprocessing speedup
         pool = multiprocessing.Pool(processes=32)
-        no_spc_match = pool.map(calc_flux_for_sky_fibers_for_plate, plates)
+        ret = pool.map(calc_flux_for_sky_fibers_for_plate, plates)
         pool.terminate()
     else:
-        no_spc_match=[calc_flux_for_sky_fibers_for_plate(p) for p in plates]
+        ret=[calc_flux_for_sky_fibers_for_plate(p) for p in plates]
 
+    raw_meta=np.hstack(tuple(t[0] for t in ret))
+    no_spc_match=[t[1] for t in ret]
     pickle.dump(no_spc_match, open('no_spc_match.pkl','wb'))
-
+    np.save('meta_raw',raw_meta)
     print("Done")
 
 
@@ -151,6 +156,11 @@ def ffe_to_flux(spframe_hdu, calib_vect, flat_files):
     
     return flux
 
+def failsafe_dict(d,key):
+    try:
+        return d[key]
+    except:
+        return -1
 
 def calc_flux_for_sky_fibers_for_plate(plate_folder):
     """
@@ -180,20 +190,21 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
 
     #Some spframes don't have corresponding spcframe images. These are skipped but saved as a txt file
     no_spc_match = []
+    raw_meta = []
+    data = []
+    specno = -1
     
+    meta_dtype=[('PLATE', 'i4'),('SPECNO','i4'),('IMG', 'i4'),('FIB', 'i4'), ('TAI-BEG','f8'),('TAI-END','f8'),
+                ('RA','f8'),('DEC','f8'),('CAMERAS','S2'),('AIRMASS','f4'),('ALT','f8'), ('AZ','f8'),('EXPTIME','f4'),
+                ('SEEING20','f4'),('SEEING50','f4'),('SEEING80','f4'), ('AIRTEMP','f4'), ('DEWPOINT','f4'),
+                ('DUSTA','f4'), ('DUSTB','f4'), ('WINDD25M','f4'), ('WINDS25M','f4'), ('GUSTD','f4'), ('GUSTS','f4'), ('HUMIDITY','f4'), 
+                ('PRESSURE','f4'), ('WINDD','f4'), ('WINDS','f4')]
+
+
     for image_num in unique_image_ids:
-        raw_meta = []
-        flux_output = []
-        wave_output = []
-        #Start writing file
-        #sky_flux_file = open(plate_dir+'/'+str(FILE_IDEN)+'_%s.txt' % image_num, 'wt')
-        #sky_flux_file.write('Plate image fiber TAI_beg TAI_end RA DEC Camera Airmass Alt Exptime flux wave\n')
-        
         #Find 4 fits images (b1, b2, r1, r2) associated with this unique image_num
         images = fnmatch.filter(spFrame_files, '*%s*' % image_num)
-
         for image in images:
-
             #Match with other files
             identifier = os.path.splitext(image)[0][-16:-5]
             print("identifier", identifier)
@@ -229,26 +240,20 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
                     sky = Sky_flux[fiber_id]
                     sky_to_write = sky[limits]
 
-                    raw_meta.append([hdr['PLATEID'], int(fiber), int(image_num), hdr['TAI-BEG'], hdr['TAI-END'], hdr['RA'], hdr['DEC'], hdr['CAMERAS'], hdr['AIRMASS'], hdr['ALT'], hdr['EXPTIME']])
-                    flux_output.append(sky_to_write)
-                    wave_output.append(wave_to_write)
-
-                    #Write the file
-                    #sky_flux_file.write('%s %d %d %.2f %.2f %.2f %.2f %s %.2f %.2f %.2f ' % (hdr['PLATEID'], int(fiber), int(image_num), hdr['TAI-BEG'], hdr['TAI-END'], hdr['RA'], hdr['DEC'], hdr['CAMERAS'], hdr['AIRMASS'], hdr['ALT'], hdr['EXPTIME']))
-                    #for x in sky_to_write:
-                    #    sky_flux_file.write('%.2f,'% x)
-                    #sky_flux_file.write(' ')
-                    #for y in wave_to_write:
-                    #    sky_flux_file.write('%.2f,'% y)
-                    #sky_flux_file.write('\n')
+                    spec=np.zeros(len(sky_to_write),dtype=[('WAVE','f8'),('SKY','f8')])
+                    spec['WAVE']=wave_to_write
+                    spec['SKY']=sky_to_write
+                    specno+=1
+                    data.append(spec)
+                    mdata=[hdr['PLATEID'], specno, int(image_num), int(fiber)]+[failsafe_dict(hdr,x[0]) for x in meta_dtype[4:]]
+                    raw_meta.append(tuple(mdata))
+                    
             else:
                 no_spc_match.append([identifier,plate_name])
                 print("Can't find a match for the spcframe")
-
-            pickle.dump(raw_meta,open(plate_dir+'/raw_meta_%s.pkl' % image_num, 'wb'))
-            pickle.dump(flux_output,open(plate_dir+'/boss_flux_%s.pkl' % image_num, 'wb'))
-            pickle.dump(wave_output,open(plate_dir+'/boss_wave_%s.pkl' % image_num, 'wb'))
-    return no_spc_match
+    np.save(plate_dir+'/calibrated_sky',data)
+    raw_meta=np.array(raw_meta,dtype=meta_dtype)
+    return (raw_meta,no_spc_match)
 
 if __name__=="__main__":
           main()
