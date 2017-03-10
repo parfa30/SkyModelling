@@ -35,32 +35,90 @@ you save your data.
 * Add MPI
 
 """
+from __future__ import print_function,division
 import os, glob, fnmatch
-import pickle
+try:
+    import cPickle as pickle
+except:
+    import pickle
 import multiprocessing
 import numpy as np
 from astropy.io import fits
+
 
 #######################
 #. SETUP DIRECTORIES. #
 #######################
 # identify directory to save data
 NEW_DIR = os.getcwd()+'/sky_flux/' #this is the folder where you want to save the output
-FILE_IDEN = 'boss_flux' #file identifier, so saved files will be boss_flux_imagenum.txt
 
 # identify spframe directory
 BASE_DIR = '/global/projecta/projectdirs/sdss/data/sdss/dr12/boss/spectro/redux/'
 FOLDERS = ['v5_7_0', 'v5_7_2/']
 
-#Collect directories for each plate for each folder in the spframe director
-PLATES = []
-for folder in FOLDERS:
-    dir = BASE_DIR+folder
-    print("directory: ", dir)
-    for p in os.listdir(dir):
-        pp = os.path.join(dir, p)
-        if os.path.isdir(pp) and p != 'spectra':
-            PLATES.append(pp)
+# detector 
+DETECTORS = {'b1':[[365,635], 'b1'], 'b2':[[365,635], 'b2'], 'r1':[[565,1040], 'b1'], 'r2':[[565,1040], 'b2']}
+
+parallel=True
+MPI=False
+nplates=0 # use just this many plates
+
+def main():
+
+    #Collect directories for each plate for each folder in the spframe director
+    plates = []
+    for folder in FOLDERS:
+        dir = BASE_DIR+folder
+        print("directory: ", dir)
+        for p in os.listdir(dir):
+            pp = os.path.join(dir, p)
+            if os.path.isdir(pp) and p != 'spectra':
+                plates.append(pp)
+    if (nplates>0):
+        plates=plates[:nplates]
+                
+    ##############
+    #   SCRIPT  #
+    ##############
+
+    #Get Calibration data. This is a preselected observation
+    CAMERAS = ['b1', 'b2', 'r1', 'r2']
+    ## nasty!
+    global CalibVector
+    CalibVector = {}
+    for camera in CAMERAS:
+        hdu = fits.open(BASE_DIR+'/v5_7_0/5399/spFluxcalib-%s-00139379.fits.gz' % camera)
+        data = hdu[0].data
+        CalibVector[camera] = data
+    print("calibration data set")
+
+    #Get Sky Fibers. 
+    ## nasty!
+    global Sky_fibers
+    Sky_fibers = pickle.load(open('sky_fibers.pkl','rb'))
+    tsky=0
+    for key, values in Sky_fibers.items():
+        for c,f in values.items():
+            tsky+=len(f)
+    print("Sky fibers identified for %i plates, total sky fibers=%i."%(len(Sky_fibers), tsky))
+
+    if parallel:
+        ## implement if MPI
+        #multiprocessing speedup
+        pool = multiprocessing.Pool(processes=32)
+        ret = pool.map(calc_flux_for_sky_fibers_for_plate, plates)
+        pool.terminate()
+    else:
+        ret=[calc_flux_for_sky_fibers_for_plate(p) for p in plates]
+
+    raw_meta=np.hstack(tuple(t[0] for t in ret))
+    no_spc_match=[t[1] for t in ret]
+    pickle.dump(no_spc_match, open('no_spc_match.pkl','wb'))
+    np.save('meta_raw',raw_meta)
+    print("Done")
+
+
+
 
 def ffe_to_flux(spframe_hdu, calib_vect, flat_files):
     """ Flat fielded electrons from spFrame to flux in 10^-17 ergs/s/cm2/A.
@@ -93,33 +151,11 @@ def ffe_to_flux(spframe_hdu, calib_vect, flat_files):
     
     return flux
 
-##############
-#   SCRIPT  #
-##############
-
-#Get Calibration data. This is a preselected observation
-CAMERAS = ['b1', 'b2', 'r1', 'r2']
-CalibVector = {}
-for camera in CAMERAS:
-    hdu = fits.open(BASE_DIR+'/v5_7_0/5399/spFluxcalib-%s-00139379.fits.gz' % camera)
-    data = hdu[0].data
-    CalibVector[camera] = data
-print("calibration data set")
-
-#Get Sky Fibers. 
-with open('sky_fibers.pkl', 'rb') as f:
-    u = pickle._Unpickler(f)
-    u.encoding = 'latin1'
-    sf_data = u.load() 
-Sky_fibers = {}
-for key, values in sf_data.items():
-    plate = key[-4:]
-    Sky_fibers[plate] = values
-print("Sky fibers identified")
-
-            
-DETECTORS = {'b1':[[365,635], 'b1'], 'b2':[[365,635], 'b2'], 'r1':[[565,1040], 'b1'], 'r2':[[565,1040], 'b2']}
-
+def failsafe_dict(d,key):
+    try:
+        return d[key]
+    except:
+        return -1
 
 def calc_flux_for_sky_fibers_for_plate(plate_folder):
     """
@@ -133,11 +169,6 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
     plate_name = plate_folder[-4:]
     print("Doing extraction for plate ", plate_name)
 
-    #make folder to dump txt files into
-    plate_dir = NEW_DIR+str(plate_name)
-    if not os.path.exists(plate_dir):
-        os.makedirs(plate_dir)
-
     #Get all spFrame and spCFrame files
     spCFrame_files = glob.glob(plate_folder+'/spCFrame*')
     spFrame_files = glob.glob(plate_folder+'/spFrame*')
@@ -149,20 +180,21 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
 
     #Some spframes don't have corresponding spcframe images. These are skipped but saved as a txt file
     no_spc_match = []
+    raw_meta = []
+    data = []
+    specno = -1
     
+    meta_dtype=[('PLATE', 'i4'),('SPECNO','i4'),('IMG', 'i4'),('FIB', 'i4'), ('TAI-BEG','f8'),('TAI-END','f8'),
+                ('RA','f8'),('DEC','f8'),('CAMERAS','S2'),('AIRMASS','f4'),('ALT','f8'), ('AZ','f8'),('EXPTIME','f4'),
+                ('SEEING20','f4'),('SEEING50','f4'),('SEEING80','f4'), ('AIRTEMP','f4'), ('DEWPOINT','f4'),
+                ('DUSTA','f4'), ('DUSTB','f4'), ('WINDD25M','f4'), ('WINDS25M','f4'), ('GUSTD','f4'), ('GUSTS','f4'), ('HUMIDITY','f4'), 
+                ('PRESSURE','f4'), ('WINDD','f4'), ('WINDS','f4')]
+
+
     for image_num in unique_image_ids:
-        raw_meta = []
-        flux_output = []
-        wave_output = []
-        #Start writing file
-        #sky_flux_file = open(plate_dir+'/'+str(FILE_IDEN)+'_%s.txt' % image_num, 'wt')
-        #sky_flux_file.write('Plate image fiber TAI_beg TAI_end RA DEC Camera Airmass Alt Exptime flux wave\n')
-        
         #Find 4 fits images (b1, b2, r1, r2) associated with this unique image_num
         images = fnmatch.filter(spFrame_files, '*%s*' % image_num)
-
         for image in images:
-
             #Match with other files
             identifier = os.path.splitext(image)[0][-16:-5]
             print("identifier", identifier)
@@ -198,32 +230,21 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
                     sky = Sky_flux[fiber_id]
                     sky_to_write = sky[limits]
 
-                    raw_meta.append([hdr['PLATEID'], int(fiber), int(image_num), hdr['TAI-BEG'], hdr['TAI-END'], hdr['RA'], hdr['DEC'], hdr['CAMERAS'], hdr['AIRMASS'], hdr['ALT'], hdr['EXPTIME']])
-                    flux_output.append(sky_to_write)
-                    wave_output.append(wave_to_write)
-
-                    #Write the file
-                    #sky_flux_file.write('%s %d %d %.2f %.2f %.2f %.2f %s %.2f %.2f %.2f ' % (hdr['PLATEID'], int(fiber), int(image_num), hdr['TAI-BEG'], hdr['TAI-END'], hdr['RA'], hdr['DEC'], hdr['CAMERAS'], hdr['AIRMASS'], hdr['ALT'], hdr['EXPTIME']))
-                    #for x in sky_to_write:
-                    #    sky_flux_file.write('%.2f,'% x)
-                    #sky_flux_file.write(' ')
-                    #for y in wave_to_write:
-                    #    sky_flux_file.write('%.2f,'% y)
-                    #sky_flux_file.write('\n')
+                    spec=np.zeros(len(sky_to_write),dtype=[('WAVE','f8'),('SKY','f8')])
+                    spec['WAVE']=wave_to_write
+                    spec['SKY']=sky_to_write
+                    specno+=1
+                    data.append(spec)
+                    mdata=[hdr['PLATEID'], specno, int(image_num), int(fiber)]+[failsafe_dict(hdr,x[0]) for x in meta_dtype[4:]]
+                    raw_meta.append(tuple(mdata))
+                    
             else:
                 no_spc_match.append([identifier,plate_name])
                 print("Can't find a match for the spcframe")
+    np.save(NEW_DIR+'/'+plate_name+'_calibrated_sky',data)
+    raw_meta=np.array(raw_meta,dtype=meta_dtype)
+    return (raw_meta,no_spc_match)
 
-            pickle.dump(raw_meta,open(plate_dir+'/raw_meta_%s.pkl' % image_num, 'wb'))
-            pickle.dump(flux_output,open(plate_dir+'/boss_flux_%s.pkl' % image_num, 'wb'))
-            pickle.dump(wave_output,open(plate_dir+'/boss_wave_%s.pkl' % image_num, 'wb'))
-    return no_spc_match
+if __name__=="__main__":
+          main()
 
-#multiprocessing speedup
-pool = multiprocessing.Pool(processes=32)
-no_spc_match = pool.map(calc_flux_for_sky_fibers_for_plate, PLATES)
-pool.terminate()
-
-pickle.dump(no_spc_match, open('no_spc_match.pkl','wb'))
-
-print("Done")
