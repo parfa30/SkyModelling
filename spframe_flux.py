@@ -51,7 +51,6 @@ from astropy.io import fits
 #######################
 # identify directory to save data
 NEW_DIR = os.getcwd()+'/sky_flux/' #this is the folder where you want to save the output
-FILE_IDEN = 'boss_flux' #file identifier, so saved files will be boss_flux_imagenum.txt
 
 # identify spframe directory
 BASE_DIR = '/global/projecta/projectdirs/sdss/data/sdss/dr12/boss/spectro/redux/'
@@ -94,15 +93,11 @@ def main():
     print("calibration data set")
 
     #Get Sky Fibers. 
-    with open('sky_fibers.pkl', 'rb') as f:
-        sf_data = pickle.load(f)
     ## nasty!
     global Sky_fibers
-    Sky_fibers = {}
+    Sky_fibers = pickle.load(open('sky_fibers.pkl','rb'))
     tsky=0
-    for key, values in sf_data.items():
-        plate = key[-4:]
-        Sky_fibers[plate] = values
+    for key, values in Sky_fibers.items():
         for c,f in values.items():
             tsky+=len(f)
     print("Sky fibers identified for %i plates, total sky fibers=%i."%(len(Sky_fibers), tsky))
@@ -173,11 +168,6 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
     """
     plate_name = plate_folder[-4:]
     print("Doing extraction for plate ", plate_name)
-
-    #make folder to dump txt files into
-    plate_dir = NEW_DIR+str(plate_name)
-    if not os.path.exists(plate_dir):
-        os.makedirs(plate_dir)
 
     #Get all spFrame and spCFrame files
     spCFrame_files = glob.glob(plate_folder+'/spCFrame*')
@@ -251,7 +241,7 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
             else:
                 no_spc_match.append([identifier,plate_name])
                 print("Can't find a match for the spcframe")
-    np.save(plate_dir+'/calibrated_sky',data)
+    np.save(NEW_DIR+'/'+plate_name+'_calibrated_sky',data)
     raw_meta=np.array(raw_meta,dtype=meta_dtype)
     return (raw_meta,no_spc_match)
 
