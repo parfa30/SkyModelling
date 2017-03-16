@@ -80,9 +80,14 @@ def main():
 
     rich_df = pd.DataFrame(np.hstack(rich_results))
 
+    #Get fiber meta data
+    #sky_fiber_data = np.load('sky_fibers_both.npy') #This name will change
+    #fiber_df = pd.DataFrame(sky_fiber_data)
+    
     #Combine with previous data and save as new numpy object
-    new_df = raw_df.merge(rich_df,how='left')
-    rich_meta_array = new_df.to_records(index=False)
+    #new_df = raw_df.merge(rich_df,on=['PLATE','IMG','TAI-BEG','RA','DEC'],how='left')
+    #full_df = new_df.merge(fiber_df,on=['PLATE','CAMERAS','FIB'],how='left')
+    rich_meta_array = rich_df.to_records(index=False)
 
     np.save('meta_rich',rich_meta_array)
     print("Done")

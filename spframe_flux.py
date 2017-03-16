@@ -2,8 +2,9 @@
 
 """
 Title: SpFrame flux conversion
-Author: P. Fagrelius
-Date: Mar. 3, 2017
+Author: P. Fagrelius, A. Slosar
+Version: 2.1
+Date: Mar. 14, 2017
 
 ==Inputs==
 This code takes the spectra from spFrame BOSS files and converts it into flux similar to that in spCframe files.
@@ -95,12 +96,9 @@ def main():
     #Get Sky Fibers. 
     ## nasty!
     global Sky_fibers
-    Sky_fibers = pickle.load(open('sky_fibers.pkl','rb'))
-    tsky=0
-    for key, values in Sky_fibers.items():
-        for c,f in values.items():
-            tsky+=len(f)
-    print("Sky fibers identified for %i plates, total sky fibers=%i."%(len(Sky_fibers), tsky))
+    Sky_fibers = np.load('sky_fibers.npy')
+    Sky_fibers['FIBER'] = Sky_fibers['FIBER'] - 1 #for numpy index
+    print("Sky fibers identified for %i plates, total sky fibers=%i."%(len(Sky_fibers['PLATE']), len(Sky_fibers)))
 
     if parallel:
         ## implement if MPI
@@ -116,9 +114,6 @@ def main():
     pickle.dump(no_spc_match, open('no_spc_match.pkl','wb'))
     np.save('meta_raw',raw_meta)
     print("Done")
-
-
-
 
 def ffe_to_flux(spframe_hdu, calib_vect, flat_files):
     """ Flat fielded electrons from spFrame to flux in 10^-17 ergs/s/cm2/A.
@@ -214,7 +209,7 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
  
                 #Get fibers
                 cam_lims, det_num = DETECTORS[Camera_type]
-                fibers = Sky_fibers[plate_name][det_num]
+                fibers = Sky_fibers[(Sky_fibers['PLATE'] == int(plate_name)) & (Sky_fibers['CAMERAS'].astype('<U2') == str(det_num))]['FIBER']
 
                 for fiber in fibers:
                     if fiber >= 500:
