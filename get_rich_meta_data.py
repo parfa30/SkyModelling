@@ -81,13 +81,13 @@ def main():
     rich_df = pd.DataFrame(np.hstack(rich_results))
 
     #Get fiber meta data
-    #sky_fiber_data = np.load('sky_fibers_both.npy') #This name will change
-    #fiber_df = pd.DataFrame(sky_fiber_data)
+    sky_fiber_data = np.load('sky_fibers.npy') #This name will change
+    fiber_df = pd.DataFrame(sky_fiber_data)
     
     #Combine with previous data and save as new numpy object
-    #new_df = raw_df.merge(rich_df,on=['PLATE','IMG','TAI-BEG','RA','DEC'],how='left')
-    #full_df = new_df.merge(fiber_df,on=['PLATE','CAMERAS','FIB'],how='left')
-    rich_meta_array = rich_df.to_records(index=False)
+    new_df = raw_df.merge(rich_df,on=['PLATE','IMG','TAI-BEG','RA','DEC'],how='left')
+    full_df = new_df.merge(fiber_df,on=['PLATE','CAMERAS','FIB'],how='left')
+    rich_meta_array = full_df.to_records(index=False)
 
     np.save('meta_rich',rich_meta_array)
     print("Done")
@@ -101,29 +101,37 @@ def get_rich_data(raw_array):
     print("Getting rich data for this plate/image ",PLATE,IMG)
  
     time = Time(TAI/86400., scale='tai', format='mjd', location=APACHE)
-    moon_lat, moon_lon, sun_lat, sun_lon, moon_alt, moon_az, sun_alt, sun_az = moon_and_sun(time)
+    moon_lat, moon_lon, sun_lat, sun_lon, moon_alt, moon_az, sun_alt, sun_az, moon_dist, moon_sep, sun_moon_sep, sun_elong = moon_and_sun(time, RA, DEC)
     days_to_full = moon_phase(time)
     ecl_lat, ecl_lon, gal_lat, gal_lon = gal_and_ecl(RA,DEC)
     az = az_from_radec(DEC, RA, time)
     fli = frac_lun_ill(np.deg2rad(moon_lon), np.deg2rad(sun_lon), np.deg2rad(moon_lat))
+    season, hour_start = get_season(time)
     this_solar_flux = get_solar_flux(solar_flux,time.value)
 
 
-    rich_dtype=[('PLATE', 'i4'),('IMG', 'i4'),('TAI-BEG','f8'),('RA','f8'),('DEC','f8'),('MOON_LAT','f4'),('MOON_LON','f4'), ('SUN_LAT','f4'),('SUN_LON','f4'),('MOON_ALT','f4'),('MOON_AZ','f4'),('SUN_ALT','f4'), ('SUN_AZ','f4'), ('DAYS2FULL','f4'),('ECL_LAT','f4'), ('ECL_LON','f4'), ('GAL_LAT','f4'), ('GAL_LON','f4'), ('AZ_CALC','f4'), ('FLI','f4'), ('SOLARFLUX','f4')]
+    rich_dtype=[('PLATE', 'i4'),('IMG', 'i4'),('TAI-BEG','f8'),('RA','f8'),('DEC','f8'),('MOON_LAT','f4'),('MOON_LON','f4'), ('SUN_LAT','f4'),('SUN_LON','f4'),('MOON_ALT','f4'),('MOON_AZ','f4'),('SUN_ALT','f4'), ('SUN_AZ','f4'), ('MOON_D','f8'), ('MOON_SEP','f8'), ('SUN_MOON_SEP','f8'),('SUN_ELONG','f8'),('DAYS2FULL','f4'),('ECL_LAT','f4'), ('ECL_LON','f4'), ('GAL_LAT','f4'), ('GAL_LON','f4'), ('AZ_CALC','f4'), ('FLI','f4'), ('SEASON','i4'), ('HOUR', 'i4'),('SOLARFLUX','f4')]
 
-    rich_meta_data = np.array([(PLATE,IMG,TAI,RA,DEC,moon_lat,moon_lon, sun_lat, sun_lon, moon_alt, moon_az, sun_alt, sun_az, days_to_full, ecl_lat, ecl_lon, gal_lat, gal_lon, az, fli, this_solar_flux)],dtype=rich_dtype)
+    rich_meta_data = np.array([(PLATE,IMG,TAI,RA,DEC,moon_lat,moon_lon, sun_lat, sun_lon, moon_alt, moon_az, sun_alt, sun_az, moon_dist, moon_sep, sun_moon_sep, sun_elong, days_to_full, ecl_lat, ecl_lon, gal_lat, gal_lon, az, fli, season, hour_start, this_solar_flux)],dtype=rich_dtype)
     
     return rich_meta_data
 
 
-def moon_and_sun(time):
+def moon_and_sun(time, RA, DEC):
     """
     Input: astropy.time.Time object
     Uses astropy get_moon and get_sun for lat and lon, then transforms to AltAz frame
     """
     moon = get_moon(time, location=APACHE)
     sun = get_sun(time)
-
+    target = SkyCoord(RA, DEC, unit=u.deg, frame = moon.frame)
+    
+    #separations
+    moon_dist = moon.distance.value
+    moon_sep = moon.separation(target).degree
+    sun_moon_sep = moon.separation(sun.transform_to(moon.frame)).degree
+    sun_elong = target.separation(sun.transform_to(moon.frame)).degree
+    
     #geocentric latitude and longitude
     moon_lat, moon_lon = (moon.geocentrictrueecliptic.lat.value,moon.geocentrictrueecliptic.lon.value)
     sun_lat, sun_lon = (sun.geocentrictrueecliptic.lat.value,sun.geocentrictrueecliptic.lon.value)
@@ -134,7 +142,7 @@ def moon_and_sun(time):
     moon_alt, moon_az = (moon_altaz.alt.value, moon_altaz.az.value)
     sun_alt, sun_az = (sun_altaz.alt.value, sun_altaz.az.value)
 
-    return [moon_lat, moon_lon, sun_lat, sun_lon, moon_alt, moon_az, sun_alt, sun_az]
+    return [moon_lat, moon_lon, sun_lat, sun_lon, moon_alt, moon_az, sun_alt, sun_az, moon_dist, moon_sep, sun_moon_sep, sun_elong]
 
 def moon_phase(time):
     """
@@ -188,6 +196,15 @@ def frac_lun_ill(moon_long, sun_long, moon_lat):
     """
     fli = (1/2.)*(1-math.cos(moon_lat)*math.cos(moon_long-sun_long))
     return fli
+
+def get_season(time):
+    month = time.datetime.month
+    season = np.rint(month/2.)
+    
+    tt = time.datetime.hour+(time.datetime.minute/60.)
+    hour_start = np.rint(tt)
+    
+    return [season, hour_start]
 
 #Solar Flux
 def get_mjd_from_fluxtime(date):
