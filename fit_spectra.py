@@ -38,7 +38,7 @@ SAVE_DIR = os.getcwd()+'/split_spectra/'
 SPECTRA_DIR = os.getcwd()+'/sky_flux/'
 
 #Files from UVES that contain all airglow lines downloaded 
-AIRGLOW_DIR = '/Users/parkerf/Research/BOSS_Sky/AirglowSpectra/'
+AIRGLOW_DIR = '/Users/parkerf/Research/BOSS_Sky/flux_repo/SkyModelling/AirglowSpectra/'
 
 def main():
     # Load spectra data
@@ -157,8 +157,13 @@ def lin_regress_model(airglow_lines, ecl_lat, ecl_lon, wave_range, sigma_range, 
     lsq = lstsq(A,sky_spectra)
 
     num_comp = A.shape[1] - len(AA)
+
+    model = np.dot(A,lsq[0])
     
-    return [np.dot(A,lsq[0]),A,lsq,num_comp]
+    R_1 = np.sum([(i-np.mean(sky_spectra))**2 for i in model])
+    R_2 = np.sum([(i-np.mean(sky_spectra))**2 for i in sky_spectra])  
+    R = R_1/R_2  
+    return [np.dot(A,lsq[0]),A,lsq,num_comp,R]
 
 def split_spectra(model,flux):
     """ Takes model and separates the continuum from the sky lines
@@ -191,11 +196,12 @@ def fit_and_separate_spectra(spectra_file):
     
             #Split model
             split_model = split_spectra(model,sky)
-            model_fit = np.zeros(len(sky),dtype=[('WAVE','f8'),('LINES','f8'),('CONT','f8'),('RESIDS','f8')])
+            model_fit = np.zeros(len(sky),dtype=[('WAVE','f8'),('LINES','f8'),('CONT','f8'),('RESIDS','f8'),('R','f8')])
             model_fit['WAVE'] = wave
             model_fit['LINES'] = split_model[0]
             model_fit['CONT'] = split_model[1]
             model_fit['RESIDS'] = split_model[2]
+            model_fit['R'] = model[4]
             data.append(model_fit)
             num+=1
         else:
