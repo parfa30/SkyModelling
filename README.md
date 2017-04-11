@@ -6,7 +6,7 @@ This repo is a collaboration between Parker Fagrelius, Anze Slocum, and David Ki
 Included in this repo:
 * spframe_flux.py: Run to collect sky flux for all BOSS data. Turns spframe electrons into flux. Generates pkl files for flux, wavelength, and raw metadata.
 * good_plates.txt: Includes QUALITY data for every plate-day from platelist.fits for BOSS data
-* sky_fibers.pkl: Includes each sky fiber identified for each BOSS plate
+* sky_fibers.npy: Includes each sky fiber identified for each BOSS plate
 * no_spc_match.pkl: file that contains all observation skipped because there was no matching spc file.
 * meta_raw.npy: file generated when running spframe_flux.py. 
 * get_meta_rich.py: script that takes raw metadata in file meta_raw.npy and calculates additional meta data. output is file (quite large) called meta_rich.npy 
