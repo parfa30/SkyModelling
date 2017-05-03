@@ -77,6 +77,28 @@ def main():
                 plates.append(pp)
     if (nplates>0):
         plates=plates[:nplates]
+#Collect directories for each plate for each folder in the spframe director
+PLATE_DIRS = []
+for folder in FOLDERS:
+    dir = BASE_DIR+folder
+    print("directory: ", dir)
+    for p in os.listdir(dir):
+        pp = os.path.join(dir, p)
+        if os.path.isdir(pp) and p != 'spectra':
+            PLATE_DIRS.append(pp)
+#Compare with what has already been done
+COMPLETE_DIRS = os.listdir(os.getcwd()+'/raw_meta_data/')
+Complete_Plate_Names = []
+All_Plate_Names = []
+for d in COMPLETE_DIRS:
+    Complete_Plate_Names.append(d[-8:-4])
+for d in PLATE_DIRS:
+    All_Plate_Names.append(d[-4:])
+
+plates_needed_idx = [i for i, x in enumerate(All_Plate_Names) if x not in Complete_Plate_Names]
+PLATES = []
+for x in plates_needed_idx:
+    PLATES.append(PLATE_DIRS[x])
                 
     ##############
     #   SCRIPT  #
