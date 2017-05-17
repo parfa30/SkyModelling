@@ -19,91 +19,83 @@ Author: P. Fagrelius
 Date: Mar. 21, 2017
 
 """
-from __future__ import print_function,division
-import glob, os
+import glob 
+import os
+import multiprocessing
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-from scipy.linalg import lstsq
-from astropy.io import fits
-from scipy import interpolate
-import multiprocessing
-from scipy.special import eval_legendre, eval_chebys
-from numpy.linalg import inv
 import statsmodels.api as sm
-from datetime import datetime
+from scipy.special import eval_legendre
 
-parallel=True
-MPI=False
+parallel = True
+MPI = False
 
 #Directory to save data
-SAVE_DIR = os.getcwd()+'/split_flux/'
+SAVE_DIR = '/scratch2/scratchdirs/parkerf/split_spectra/blue_split_spectra/'
 #Directory where all SpFrame flux files reside
-SPECTRA_DIR = os.getcwd()+'/sigma_sky_flux/'
+SPECTRA_DIR = '/scratch2/scratchdirs/parkerf/sky_flux/'
 
 def main():
     # Load spectra data
+
+    SAVED_FILES = os.listdir(SAVE_DIR)
     SPECTRA_FILES = os.listdir(SPECTRA_DIR)
-    
-    #Compare with what has already been done
-    COMPLETE_FILES = os.listdir(SAVE_DIR)
-    Complete_Plate_Names = []
-    All_Plate_Names = []
-    for d in COMPLETE_FILES:
-        Complete_Plate_Names.append(d[-23:-19])
-    for d in SPECTRA_FILES:
-        All_Plate_Names.append(d[-23:-19])
 
-    plates_needed_idx = [i for i, x in enumerate(All_Plate_Names) if x not in Complete_Plate_Names]
-    SPECTRA = []
-    for x in plates_needed_idx:
-        SPECTRA.append(SPECTRA_FILES[x])
-    print('Will be analyzing %d plate files' %len(SPECTRA))
+    SPECTRA = get_plates_needed(SAVED_FILES, SPECTRA_FILES)
 
-    #Get meta data
     global MetaData
     MetaData = np.load('meta_rich.npy')
     print("got MetaData")
-    
-    #Get Airglowlines
-    AIRGLOW_DIR = '/Users/parkerf/Research/SkyModel/SkyModelling/AirglowSpectra/cosby'
-    AirglowFiles = glob.glob(AIRGLOW_DIR+'/*.txt')
-
-    global AirglowLines
-    AirglowLines = []
-    for file in AirglowFiles:
-        data = pd.read_csv(file,delim_whitespace=True)
-        d = data.to_records(index=False)
-        AirglowLines.append(np.array(d))
-    AirglowLines = np.hstack(AirglowLines)
-
-    
 
     ############
     ## SCRIPT ##
     ############
-    
+    global ttype
+    ttype = 'blue'
     if parallel:
         ## implement if MPI
         #multiprocessing speedup
-        pool = multiprocessing.Pool(processes=32)
+        pool = multiprocessing.Pool(processes=10)
         data = pool.map(fit_and_separate_spectra, SPECTRA)
         pool.terminate()
     else:
         data = [fit_and_separate_spectra(p) for p in SPECTRA]
+    
+def get_plates_needed(saved_files, total_files):
+    #Compare with what has already been done
+    Complete = [d[-18:-14] for d in saved_files]
+    Total = [d[-23:-19] for d in total_files]
+    Needed_idx = [i for i, x in enumerate(Total) if x not in Complete]
+    SPECTRA = [total_files[x] for x in Needed_idx]
+    print('Will be analyzing %d plate files' % len(SPECTRA))
+    return SPECTRA
 
-def get_vac_lines():
-    b_sig = np.where(AirglowLines['obs_eint']>10)
+def get_airglow_spectra():
+    AIRGLOW_DIR = '/global/homes/p/parkerf/BOSS_Sky/SkyModelling/AirglowSpectra/cosby' 
+    AF = glob.glob(AIRGLOW_DIR+'/*.txt')
+    AL = []
+    for file in AF:
+        data = pd.read_csv(file, delim_whitespace=True)
+        d = data.to_records(index=False)
+        AL.append(np.array(d))
+    AirglowLines = np.hstack(AL)
+    return AirglowLines
+
+def get_vac_lines(AirglowLines):
+    """Gets only the airglow lines needed to make an appropriate fit. This is different for
+    the blue and red CCDs. """
+    b_sig = np.where(AirglowLines['obs_eint'] > 10)
     bVL = air_to_vac(AirglowLines['obs_wave'])
     bVL = bVL[b_sig] #nm to A
-    blueVacLines = bVL[bVL<700]
+    BlueVacLines = bVL[bVL < 700]
 
-    r_sig = np.where(AirglowLines['obs_eint']>3)
+    r_sig = np.where(AirglowLines['obs_eint'] > 3)
     rVL = air_to_vac(AirglowLines['obs_wave'])
     rVL = rVL[r_sig] #nm to A
-    redVacLines = rVL[rVL>560]
+    RedVacLines = rVL[rVL > 560]
 
-    return blueVacLines, redVacLines
+    return BlueVacLines, RedVacLines
+
 
 def clean_spectra(spectrum):
     """Takes out all nan/inf so lstsq will run smoothly
@@ -154,77 +146,116 @@ def airglow_line_components(airglow_lines, wave_range, disp_range):
         AA.append(ss)
     return np.vstack(AA)
 
+
 def linear_model(spectrum, num_cont, airglow_lines):
-    wave_range, sky_spectra, sigma_range, disp_range = clean_spectra(spectrum)
+        """ This is the heart of the program. It computes the linear model using Ordinary Least Squares. It then
+        splits up the model into components: lines, continuum and residuals.
+        The inputs characterize whether it is a blue or red sky fit. They have slightly different 
+        continuum models and we break up the airglow lines so that it is faster.
 
-    AA = airglow_line_components(airglow_lines, wave_range, disp_range)
+        INPUTS:  - sky spectrum: from Boss Sky Spectra (generated by spframe_flux.py)
+                 - num_cont: the number of polynomials used for the continuum fitting
+                 - airglow_lines: the set of lines used to fit out the airglow. different for blue/red
+        OUTPUTS: - wave_range: original wavelength range (generated by spframe_flux.py)
+                 - lines: Airglow lines fitted
+                 - cont: Continuum fitted
+                 - res: Residuals between linear model and original sky flux
+                 - R: R^2 value to determine goodness of fit
+        """
 
-    # Continuum model
-    AC = []
-    for i in range(num_cont):
-        AC.append(eval_legendre(i, wave_range))
-    AC = np.array(AC)
-    A = np.stack(np.vstack((AC,AA)),axis=1)
+        wave_range, sky_spectra, sigma_range, disp_range = clean_spectra(spectrum)
 
-    results = sm.OLS(sky_spectra, A).fit()
-    params = results.params
-    model = np.dot(A, params)
-    
-    #R^2
-    resids = sky_spectra-model
-    R_1 = np.sum([(i)**2 for i in resids])
-    R_2 = np.sum([(i-np.mean(sky_spectra))**2 for i in sky_spectra])  
-    R = 1-(R_1/R_2)   
+        AA = airglow_line_components(airglow_lines, wave_range, disp_range)
 
-    #Separate
-    cont = np.dot(A[:,0:num_cont],params[0:num_cont])
-    lines = np.dot(A[:,num_cont:],params[num_cont:])
-    res = sky_spectra - model
-    
-    return [wave_range, lines, cont, res, R]
+        # Continuum model
+        AC = []
+        for i in range(num_cont):
+            AC.append(eval_legendre(i, wave_range))
+        AC = np.array(AC)
+        A = np.stack(np.vstack((AC, AA)), axis=1)
+
+        results = sm.OLS(sky_spectra, A).fit()
+        params = results.params
+        model = np.dot(A, params)
+
+        #Separate
+        cont = np.dot(A[:,0:num_cont], params[0:num_cont])
+        lines = np.dot(A[:,num_cont:], params[num_cont:])
+        res = sky_spectra - model
+        
+        #R^2
+        R_1 = np.sum([(i)**2 for i in res])
+        R_2 = np.sum([(i-np.mean(sky_spectra))**2 for i in sky_spectra])  
+        R = 1-(R_1/R_2)   
+
+        return [wave_range, lines, cont, res, R]
 
 def fit_and_separate_spectra(spectra_file):
-    BlueVacLines, RedVacLines = get_vac_lines()
+        """Function that runs the linear model and saves the output. The output file is a .npy file that includes
+        the parts of the model (lines, continuum, and residuals) along with the wavelengths associated for ease in comparison.
+        It also contains some meta data so that these linear models can be correlated with the actual flux.
 
-    plate_num = spectra_file[-23:-19]
-    print("Fitting spectra in plate %s" %plate_num)
-    spectra = np.load(SPECTRA_DIR+spectra_file)
-    this_plate = MetaData[MetaData['PLATE'] == int(plate_num)]
-    max_num = 10 #len(spectra) Number of spectra in a given plate that you want to run this for. Mostly for debugging
-    specnos = np.random.choice(this_plate['SPECNO'], size=max_num)
-    num = 0
-    data = []
-   
-    for i, specno in enumerate(specnos):
-        if num < max_num:
-            start = datetime.now()
-            print('splitting spectra %d/%d for plate %s' % (i,len(specnos),plate_num))
-            this_obs = this_plate[this_plate['SPECNO'] == specno]
-            if (this_obs['CAMERAS'] == b'b1') | (this_obs['CAMERAS'] == b'b2'):
-                model = linear_model(spectra[specno], 4, BlueVacLines)
-            elif (this_obs['CAMERAS'] == b'r1') | (this_obs['CAMERAS'] == b'r2'):
-                model = linear_model(spectra[specno], 3, RedVacLines)
+        This funciton is used in a multiprocessing loop.
+        """
+
+        BlueVacLines, RedVacLines = get_vac_lines(get_airglow_spectra())
+
+        plate_num = spectra_file[-23:-19]
+        print("Fitting spectra in plate %s" % plate_num)
+        spectra = np.load(SPECTRA_DIR+spectra_file)
+        this_plate = MetaData[MetaData['PLATE'] == int(plate_num)]
+
+        if ttype == 'test':
+            max_num = 10 
+            specnos = this_plate[0: max_num]['SPECNO']
+        elif ttype == 'blue':
+            max_num = len(spectra)-1
+            specnos = this_plate[(this_plate['CAMERAS'] == b'b1') | (this_plate['CAMERAS'] == b'b2')]['SPECNO']
+        elif ttype == 'red':
+            max_num = len(spectra)-1
+            specnos = this_plate[(this_plate['CAMERAS'] == b'r1') | (this_plate['CAMERAS'] == b'r2')]['SPECNO']
+        elif ttype == 'full':
+            max_num = len(spectra)
+            specnos = this_plate['SPECNO']
+        else: 
+            print("not a valid type. Going to test")
+            max_num = 10 #len(spectra) Number of spectra in a given plate that you want to run this for. Mostly for debugging
+            specnos = np.random.choice(this_plate['SPECNO'], size=max_num)
+
+        num = 0
+        data = []
+        for i, specno in enumerate(specnos):
+            if num < max_num:
+                print('splitting spectra %d/%d for plate %s' % (i, len(specnos), plate_num))
+                this_obs = this_plate[this_plate['SPECNO'] == specno]
+                if len(this_obs) > 1:
+                    this_obs = this_obs[0]
+                    print("This observation had more than one specno with that number")
+                else:
+                    pass
+                if (this_obs['CAMERAS'] == b'b1') | (this_obs['CAMERAS'] == b'b2'):
+                    model = linear_model(spectra[specno], 4, BlueVacLines)
+                elif (this_obs['CAMERAS'] == b'r1') | (this_obs['CAMERAS'] == b'r2'):
+                    model = linear_model(spectra[specno], 3, RedVacLines)
+                else:
+                    print("Don't recognize the camera")
+                    model = [0, 0, 0, 0, 0]
+               
+                model_fit = np.zeros(len(model[0]),dtype=[('PLATE','i4'), ('COLOR','S2'), ('NUM','i4'), ('WAVE','f8'), ('LINES','f8'), ('CONT','f8'), ('RESIDS','f8'), ('R','f8')])
+                model_fit['PLATE'] = plate_num
+                model_fit['COLOR'] = this_obs['CAMERAS']
+                model_fit['NUM'] = specno
+                model_fit['WAVE'] = model[0]
+                model_fit['LINES'] = model[1]
+                model_fit['CONT'] = model[2]
+                model_fit['RESIDS'] = model[3]
+                model_fit['R'] = model[4]
+                data.append(model_fit)
+                num+=1
             else:
-                print("Don't recognize the camera")
-                model = [0,0,0,0,0]
-            fit_time = (datetime.now()-start).total_seconds()
-            #Save pieces
-            model_fit = np.zeros(len(model[0]),dtype=[('TIME','f8'),('PLATE','i4'),('COLOR','S2'),('NUM','i4'),('WAVE','f8'),('LINES','f8'),('CONT','f8'),('RESIDS','f8'),('R','f8')])
-            model_fit['TIME'] = fit_time
-            model_fit['PLATE'] = plate_num
-            model_fit['COLOR'] = this_obs['CAMERAS']
-            model_fit['NUM'] = specno
-            model_fit['WAVE'] = model[0]
-            model_fit['LINES'] = model[1]
-            model_fit['CONT'] = model[2]
-            model_fit['RESIDS'] = model[3]
-            model_fit['R'] = model[4]
-            data.append(model_fit)
-            num+=1
-        else:
-            break
+                break
 
-    np.save(SAVE_DIR+plate_num+'_split_fit',data)
+        np.save(SAVE_DIR+plate_num+'_split_fit',data)
 
         
 
