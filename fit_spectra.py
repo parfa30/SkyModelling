@@ -31,29 +31,28 @@ parallel = True
 MPI = False
 
 #Directory to save data
-SAVE_DIR = '/scratch2/scratchdirs/parkerf/split_spectra/blue_split_spectra/'
+SAVE_DIR = '/Volumes/PARKER/boss_files/split_spectra/'
 #Directory where all SpFrame flux files reside
-SPECTRA_DIR = '/scratch2/scratchdirs/parkerf/sky_flux/'
-
+SPECTRA_DIR = '/Volumes/PARKER/boss_files/new_sky_flux/'
+AIRGLOW_DIR = '/Users/parkerf/Research/SkyModel/SkyModelling/AirglowSpectra/cosby/'
 def main():
     # Load spectra data
 
-    SAVED_FILES = os.listdir(SAVE_DIR)
-    SPECTRA_FILES = os.listdir(SPECTRA_DIR)
-
+    SAVED_FILES = glob.glob(SAVE_DIR+"*_split_fit.npy")
+    SPECTRA_FILES = glob.glob(SPECTRA_DIR+"*_calibrated_sky.npy")
     SPECTRA = get_plates_needed(SAVED_FILES, SPECTRA_FILES)
-
+    print(SPECTRA)
     global MetaData
-    MetaData = np.load('meta_rich.npy')
+    MetaData = np.load(SPECTRA_DIR+'meta_raw.npy')
     print("got MetaData")
 
     #Identify which data you want to look at
     #Options: test (10 total), blue, red, full
     global ttype
-    ttype = 'blue'
+    ttype = 'full'
     
     if parallel:
-        pool = multiprocessing.Pool(processes=10)
+        pool = multiprocessing.Pool(processes=4)
         data = pool.map(fit_and_separate_spectra, SPECTRA)
         pool.terminate()
     else:
@@ -64,16 +63,18 @@ def get_plates_needed(saved_files, total_files):
     stops working in the middle you don't have to start over"""
 
     Complete = [d[-18:-14] for d in saved_files]
+    print(Complete)
     Total = [d[-23:-19] for d in total_files]
+    print(Total)
     Needed_idx = [i for i, x in enumerate(Total) if x not in Complete]
+    print(Needed_idx)
     SPECTRA = [total_files[x] for x in Needed_idx]
-    print('Will be analyzing %d plate files' % len(SPECTRA))
+    print('Will be analyzing %d plate files' % len(Needed_idx))
     return SPECTRA
 
 def get_airglow_spectra():
     """This function loads the airglow files from Cosby et al paper and changes the format"""
 
-    AIRGLOW_DIR = '/global/homes/p/parkerf/BOSS_Sky/SkyModelling/AirglowSpectra/cosby' 
     AF = glob.glob(AIRGLOW_DIR+'/*.txt')
     AL = []
     for file in AF:
@@ -86,12 +87,12 @@ def get_airglow_spectra():
 def get_vac_lines(AirglowLines):
     """Gets only the airglow lines needed to make an appropriate fit. This is different for
     the blue and red CCDs. """
-    b_sig = np.where(AirglowLines['obs_eint'] > 10)
+    b_sig = np.where(AirglowLines['obs_eint'] > 5)
     bVL = air_to_vac(AirglowLines['obs_wave'])
     bVL = bVL[b_sig] #nm to A
     BlueVacLines = bVL[bVL < 700]
 
-    r_sig = np.where(AirglowLines['obs_eint'] > 3)
+    r_sig = np.where(AirglowLines['obs_eint'] > 5)
     rVL = air_to_vac(AirglowLines['obs_wave'])
     rVL = rVL[r_sig] #nm to A
     RedVacLines = rVL[rVL > 560]
@@ -204,7 +205,7 @@ def fit_and_separate_spectra(spectra_file):
 
         plate_num = spectra_file[-23:-19]
         print("Fitting spectra in plate %s" % plate_num)
-        spectra = np.load(SPECTRA_DIR+spectra_file)
+        spectra = np.load(spectra_file)
         this_plate = MetaData[MetaData['PLATE'] == int(plate_num)]
 
         if ttype == 'test':
@@ -236,17 +237,17 @@ def fit_and_separate_spectra(spectra_file):
                 else:
                     pass
                 if (this_obs['CAMERAS'] == b'b1') | (this_obs['CAMERAS'] == b'b2'):
-                    model = linear_model(spectra[specno], 4, BlueVacLines)
+                    model = linear_model(spectra[specno], 3, BlueVacLines)
                 elif (this_obs['CAMERAS'] == b'r1') | (this_obs['CAMERAS'] == b'r2'):
-                    model = linear_model(spectra[specno], 3, RedVacLines)
+                    model = linear_model(spectra[specno], 2, RedVacLines)
                 else:
                     print("Don't recognize the camera")
                     model = [0, 0, 0, 0, 0]
                
-                model_fit = np.zeros(len(model[0]),dtype=[('PLATE','i4'), ('COLOR','S2'), ('NUM','i4'), ('WAVE','f8'), ('LINES','f8'), ('CONT','f8'), ('RESIDS','f8'), ('R','f8')])
+                model_fit = np.zeros(len(model[0]),dtype=[('PLATE','i4'), ('COLOR','S2'), ('SPECNO','i4'), ('WAVE','f8'), ('LINES','f8'), ('CONT','f8'), ('RESIDS','f8'), ('R','f8')])
                 model_fit['PLATE'] = plate_num
                 model_fit['COLOR'] = this_obs['CAMERAS']
-                model_fit['NUM'] = specno
+                model_fit['SPECNO'] = specno
                 model_fit['WAVE'] = model[0]
                 model_fit['LINES'] = model[1]
                 model_fit['CONT'] = model[2]

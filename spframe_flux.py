@@ -3,8 +3,12 @@
 """
 Title: SpFrame flux conversion
 Author: P. Fagrelius, A. Slosar
-Version: 2.1
-Date: Mar. 14, 2017
+
+Version:
+3.0 Jun, 2017 Modification of flux calculation and removal of flagged pixels (Parker)
+2.1 Mar, 2017 Refactoring by A. Slosar
+1.0 Apri, 2017 P. Fagrelius
+
 
 ==Inputs==
 This code takes the spectra from spFrame BOSS files and converts it into flux similar to that in spCframe files.
@@ -13,10 +17,10 @@ Flux output is 10^-17 ergs/s/cm2/A.
 This conversion is made only for "sky" fibers as identified in the plug list in spframe files hdu[5]. These have 
 OBJTYPE=SKY. A full list of all sky fibers is saved in a pickle file 'sky_fibers.pkl' with associated plate and camera.
 
-The flux is converted with the equation flux = electrons*calibration, 
-where calib = calibration^-1 and electrons = flat fielded electrons * super flat * fiber flat
+The flux is converted with the equation spflux = eflux(spFrame[0])/spCalib.
+This is equal to spcframe flux without correction and distortion included. i.e spflux = spcflux/(corr*distort*R)
 
-We are using only one calibration file for all conversions, which was selected from a good seeing day
+??We are using only one calibration file for all conversions, which was selected from a good seeing day
 
 ==Outputs==
 Running this code generates txt files that contain the following information:
@@ -32,8 +36,6 @@ in each camera for that image. They are saved in folders corresponding to the pl
 When you run this script it will generate these files for every spframe in the /boss/spectro/redux file, or wherever 
 you save your data. 
 
-==TO-DO==
-* Add MPI
 
 """
 from __future__ import print_function,division
@@ -44,6 +46,7 @@ except:
     import pickle
 import multiprocessing
 import numpy as np
+import bitmask as b  
 from astropy.io import fits
 
 
@@ -51,11 +54,11 @@ from astropy.io import fits
 #. SETUP DIRECTORIES. #
 #######################
 # identify directory to save data
-NEW_DIR = os.getcwd()+'/sky_flux/' #this is the folder where you want to save the output
+SAVE_DIR = '/Volumes/PARKER/boss_files/new_sky_flux' #this is the folder where you want to save the output
 
 # identify spframe directory
-BASE_DIR = '/global/projecta/projectdirs/sdss/data/sdss/dr12/boss/spectro/redux/'
-FOLDERS = ['v5_7_0', 'v5_7_2/']
+BASE_DIR = '/Volumes/PARKER/boss_files/'
+FOLDERS = ['raw_files']
 
 # detector 
 DETECTORS = {'b1':[[365,635], 'b1'], 'b2':[[365,635], 'b2'], 'r1':[[565,1040], 'b1'], 'r2':[[565,1040], 'b2']}
@@ -65,108 +68,89 @@ MPI=False
 nplates=0 # use just this many plates
 
 def main():
-
+    
     #Collect directories for each plate for each folder in the spframe director
-    plates = []
+    PLATE_DIRS = []
     for folder in FOLDERS:
         dir = BASE_DIR+folder
         print("directory: ", dir)
         for p in os.listdir(dir):
             pp = os.path.join(dir, p)
             if os.path.isdir(pp) and p != 'spectra':
-                plates.append(pp)
+                PLATE_DIRS.append(pp)
+
+    #Compare with what has already been done
+    COMPLETE_DIRS = os.listdir(SAVE_DIR)
+    Complete_Plate_Names = []
+    All_Plate_Names = []
+    for d in COMPLETE_DIRS:
+        Complete_Plate_Names.append(d[-8:-4])
+    for d in PLATE_DIRS:
+        All_Plate_Names.append(d[-4:])
+
+    plates_needed_idx = [i for i, x in enumerate(All_Plate_Names) if x not in Complete_Plate_Names]
+    PLATES = []
+    for x in plates_needed_idx:
+        PLATES.append(PLATE_DIRS[x])
+
     if (nplates>0):
-        plates=plates[:nplates]
-#Collect directories for each plate for each folder in the spframe director
-PLATE_DIRS = []
-for folder in FOLDERS:
-    dir = BASE_DIR+folder
-    print("directory: ", dir)
-    for p in os.listdir(dir):
-        pp = os.path.join(dir, p)
-        if os.path.isdir(pp) and p != 'spectra':
-            PLATE_DIRS.append(pp)
-#Compare with what has already been done
-COMPLETE_DIRS = os.listdir(os.getcwd()+'/raw_meta_data/')
-Complete_Plate_Names = []
-All_Plate_Names = []
-for d in COMPLETE_DIRS:
-    Complete_Plate_Names.append(d[-8:-4])
-for d in PLATE_DIRS:
-    All_Plate_Names.append(d[-4:])
-
-plates_needed_idx = [i for i, x in enumerate(All_Plate_Names) if x not in Complete_Plate_Names]
-PLATES = []
-for x in plates_needed_idx:
-    PLATES.append(PLATE_DIRS[x])
+        PLATES=PLATES[:nplates]
                 
-    ##############
-    #   SCRIPT  #
-    ##############
+    #Get Sky Fibers. 
+    global Sky_fibers
+    Sky_fibers = np.load('/Users/parkerf/Research/SkyModel/SkyModelling/sky_fibers.npy')
+    print("Sky fibers identified for %i plates, total sky fibers=%i."%(len(np.unique(Sky_fibers['PLATE'])), len(Sky_fibers)))
 
-    #Get Calibration data. This is a preselected observation
+    #Get Calib File. Using the same calibration file for ALL.
     CAMERAS = ['b1', 'b2', 'r1', 'r2']
-    ## nasty!
     global CalibVector
     CalibVector = {}
     for camera in CAMERAS:
-        hdu = fits.open(BASE_DIR+'/v5_7_0/5399/spFluxcalib-%s-00139379.fits.gz' % camera)
+        hdu = fits.open(BASE_DIR+'raw_files/5399/spFluxcalib-%s-00139379.fits.gz' % camera)
         data = hdu[0].data
         CalibVector[camera] = data
     print("calibration data set")
-
-    #Get Sky Fibers. 
-    ## nasty!
-    global Sky_fibers
-    Sky_fibers = np.load('sky_fibers.npy')
-    Sky_fibers['FIBER'] = Sky_fibers['FIBER'] - 1 #for numpy index
-    print("Sky fibers identified for %i plates, total sky fibers=%i."%(len(Sky_fibers['PLATE']), len(Sky_fibers)))
 
     if parallel:
         ## implement if MPI
         #multiprocessing speedup
         pool = multiprocessing.Pool(processes=32)
-        ret = pool.map(calc_flux_for_sky_fibers_for_plate, plates)
+        ret = pool.map(calc_flux_for_sky_fibers_for_plate, PLATES)
         pool.terminate()
     else:
-        ret=[calc_flux_for_sky_fibers_for_plate(p) for p in plates]
+        ret=[calc_flux_for_sky_fibers_for_plate(p) for p in PLATES]
 
-    raw_meta=np.hstack(tuple(t[0] for t in ret))
-    no_spc_match=[t[1] for t in ret]
-    pickle.dump(no_spc_match, open('no_spc_match.pkl','wb'))
-    np.save('meta_raw',raw_meta)
+    raw_meta=np.hstack(tuple(t for t in ret))
+    np.save(SAVE_DIR+'meta_raw',raw_meta)
     print("Done")
 
-def ffe_to_flux(spframe_hdu, calib_vect, flat_files):
+def ffe_to_flux(spframe_hdu, calib_data):
     """ Flat fielded electrons from spFrame to flux in 10^-17 ergs/s/cm2/A.
-    flux = electrons*calibration, where calib = calibration^-1
-    electrons = flat fielded electrons * super flat * fiber flat
+    flux = eflux*calibration, where calib = calibration^-1
     
     INPUTS:  spframe_hdu = hdu list of the spFrame. Use data sky data and super flat
-             calib_vect = data from the spFluxcalib file associated with the camera.
-                        This was preselected based on seeing and same is used 
-                        for every observation.
-             flat_files = list of fiber flat files taken on day of spframe with same camera.
-                        The correct flat file is selected from an ID in the spframe header
+             calib_vect = calibration file name associated with the spframe 
     OUTPUT:  numpy array of spframe converted into flux units
     """
-    #Get eflux data and superflux data
-    hdr = spframe_hdu[0].header
-    eflux = spframe_hdu[6].data + spframe_hdu[0].data #6 is sky, 0 is residuals
-    super_flat = spframe_hdu[8].data
+    #eflux  = #6 is sky, 0 is residuals
+    eflux = spframe_hdu[6].data + spframe_hdu[0].data 
+    spflux = eflux/calib_data
     
-    #get fiber flat data corresponding to the spframe
-    flat_name = hdr['FLATFILE'][-15:-4]
-    flat_file = fnmatch.filter(flat_files, '*%s*' % str(flat_name))[0]
-    flat_hdu = fits.open(flat_file)
-    fiber_flat = flat_hdu[0].data
-    flat_hdu.close()
+    return spflux
 
-    #Calculate flux
-    electrons = eflux * super_flat * fiber_flat
-    flux = electrons/calib_vect
-    
-    return flux
+def remove_rejects(bitmask, sky_flux):
+    """Removes any pixels that are flagged in spcframe as FULLREJECT or
+    COMBINEREJ. This gets rid of any pixels in a sky fiber that have cosmic rays
+    or such things.
+    """
+    bad_pix = []
+    for pix, bit in enumerate(bitmask):
+        flags = b.decode_bitmask(b.SPPIXMASK,bit)
+        for flag in flags:
+            if flag == 'FULLREJECT' or flag == 'COMBINEREJ':
+                bad_pix.append(pix)
+    sky_flux[bad_pix] = 0
+    return sky_flux
 
 def failsafe_dict(d,key):
     try:
@@ -189,11 +173,11 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
     #Get all spFrame and spCFrame files
     spCFrame_files = glob.glob(plate_folder+'/spCFrame*')
     spFrame_files = glob.glob(plate_folder+'/spFrame*')
-    spFlat_files = glob.glob(plate_folder+'/spFlat*')
 
     #Get all image numbers in the plate folder
-    image_ids = [os.path.splitext(spfile)[0][-13:-5] for spfile in spFrame_files]
-    unique_image_ids = np.unique(np.array(image_ids))
+    spPlate = glob.glob(plate_folder+'/spPlate*')[0]
+    plate_hdu = fits.open(spPlate)
+    image_ids = [plate_hdu[0].header[str(expid)][0:11] for expid in plate_hdu[0].header['EXPID*']]
 
     #Some spframes don't have corresponding spcframe images. These are skipped but saved as a txt file
     no_spc_match = []
@@ -201,66 +185,76 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
     data = []
     specno = -1
     
-    meta_dtype=[('PLATE', 'i4'),('SPECNO','i4'),('IMG', 'i4'),('FIB', 'i4'), ('TAI-BEG','f8'),('TAI-END','f8'),
-                ('RA','f8'),('DEC','f8'),('CAMERAS','S2'),('AIRMASS','f4'),('ALT','f8'), ('AZ','f8'),('EXPTIME','f4'),
-                ('SEEING20','f4'),('SEEING50','f4'),('SEEING80','f4'), ('AIRTEMP','f4'), ('DEWPOINT','f4'),
-                ('DUSTA','f4'), ('DUSTB','f4'), ('WINDD25M','f4'), ('WINDS25M','f4'), ('GUSTD','f4'), ('GUSTS','f4'), ('HUMIDITY','f4'), 
-                ('PRESSURE','f4'), ('WINDD','f4'), ('WINDS','f4')]
+    meta_dtype=[('PLATE', 'i4'),('SPECNO','i4'),('IMG', 'i4'),('FIB', 'i4'), ('XFOCAL','f4'),('YFOCAL','f4'),('FIBER_RA','f4'),
+                ('FIBER_DEC','f4'), ('TAI-BEG','f8'),('TAI-END','f8'),('RA','f8'), ('DEC','f8'),('CAMERAS','S2'),('AIRMASS','f4'),
+                ('ALT','f8'), ('AZ','f8'),('EXPTIME','f4'), ('SEEING20','f4'),('SEEING50','f4'),('SEEING80','f4'), ('AIRTEMP','f4'), 
+                ('DEWPOINT','f4'),('DUSTA','f4'), ('DUSTB','f4'),('WINDD25M','f4'), ('WINDS25M','f4'), ('GUSTD','f4'), 
+                ('GUSTS','f4'), ('HUMIDITY','f4'), ('PRESSURE','f4'), ('WINDD','f4'), ('WINDS','f4')]
 
 
-    for image_num in unique_image_ids:
-        #Find 4 fits images (b1, b2, r1, r2) associated with this unique image_num
-        images = fnmatch.filter(spFrame_files, '*%s*' % image_num)
-        for image in images:
-            #Match with other files
-            identifier = os.path.splitext(image)[0][-16:-5]
-            print("identifier", identifier)
+    for image_id in image_ids:
+        print("identifier", image_id)
 
-            #Get sky data and header information for spFrame
-            sp_hdu = fits.open(image)
-            hdr = sp_hdu[0].header
-            Camera_type = hdr['CAMERAS']
-            Sky_flux = ffe_to_flux(sp_hdu, CalibVector[Camera_type], spFlat_files)
+        #Get sky data and header information for spFrame
+        sp_file = fnmatch.filter(spFrame_files, '*%s*' % image_id)[0]
+        sp_hdu = fits.open(sp_file)
+        hdr = sp_hdu[0].header
+        Camera_type = hdr['CAMERAS'] 
+        image_num = hdr['EXPOSURE']
 
-            #get wavelength
-            spcframes = fnmatch.filter(spCFrame_files, '*%s*' % identifier)
-            if len(spcframes) > 0:
-                spcframe = spcframes[0]
-                spc_hdu = fits.open(spcframe)
-                waves = spc_hdu[3].data
- 
-                #Get fibers
-                cam_lims, det_num = DETECTORS[Camera_type]
-                fibers = Sky_fibers[(Sky_fibers['PLATE'] == int(plate_name)) & (Sky_fibers['CAMERAS'].astype('<U2') == str(det_num))]['FIBER']
+        calib_data = CalibVector[Camera_type]
+        Sky_flux = ffe_to_flux(sp_hdu, calib_data)
 
-                for fiber in fibers:
-                    if fiber >= 500:
-                        fiber_id = fiber-500
-                    else:
-                        fiber_id = fiber
-                
-                    logwave = waves[fiber_id]
-                    wave = (10**logwave)/10.
-                    limits = np.where((wave > cam_lims[0]) & (wave < cam_lims[1]))
-                    wave_to_write = wave[limits]
+        #get wavelength
+        spcframe = fnmatch.filter(spCFrame_files, '*spCFrame-%s*' % image_id)[0]
+        spc_hdu = fits.open(spcframe)
+        logwaves = spc_hdu[3].data
+        disps = spc_hdu[4].data
+        sigmas = spc_hdu[1].data
 
-                    sky = Sky_flux[fiber_id]
-                    sky_to_write = sky[limits]
+        #get bitmask
+        bitmask = spc_hdu[2].data
 
-                    spec=np.zeros(len(sky_to_write),dtype=[('WAVE','f8'),('SKY','f8')])
-                    spec['WAVE']=wave_to_write
-                    spec['SKY']=sky_to_write
-                    specno+=1
-                    data.append(spec)
-                    mdata=[hdr['PLATEID'], specno, int(image_num), int(fiber)]+[failsafe_dict(hdr,x[0]) for x in meta_dtype[4:]]
-                    raw_meta.append(tuple(mdata))
-                    
+        #Get fibers
+        cam_lims, det_num = DETECTORS[Camera_type]
+        fibers = Sky_fibers[(Sky_fibers['PLATE'] == int(plate_name)) & (Sky_fibers['CAMERAS'].astype('<U2') == str(det_num))]['FIB']
+
+        for fiber in fibers:
+            if fiber >= 500:
+                fiber_id = fiber-500
             else:
-                no_spc_match.append([identifier,plate_name])
-                print("Can't find a match for the spcframe")
-    np.save(NEW_DIR+'/'+plate_name+'_calibrated_sky',data)
+                fiber_id = fiber
+        
+            logwave = logwaves[fiber_id]
+
+            wave = (10**logwave)/10.
+            limits = np.where((wave > cam_lims[0]) & (wave < cam_lims[1]))
+            wave_to_write = wave[limits]
+
+            sky_clean = remove_rejects(bitmask[fiber_id], Sky_flux[fiber_id])
+            sky_to_write = sky_clean[limits]
+
+            sigma_to_write = sigmas[fiber_id][limits] #ivar from spcframes in flux
+            disp = 10**(disps[fiber_id]*10**(-4)*logwave)/10.
+            disp_to_write = disp[limits] #wavelength dispersion in nm
+
+            spec=np.zeros(len(sky_to_write),dtype=[('WAVE','f8'),('SKY','f8'),('SIGMA','f8'),('DISP','f8')])
+            spec['WAVE'] = wave_to_write
+            spec['SKY'] = sky_to_write
+            spec['SIGMA'] = sigma_to_write
+            spec['DISP'] = disp_to_write
+            specno+=1
+            data.append(spec)
+
+            fiber_meta = sp_hdu[5].data[fiber_id]
+            mdata=[hdr['PLATEID'], specno, int(image_num), int(fiber),fiber_meta['XFOCAL'], fiber_meta['YFOCAL'], 
+                      fiber_meta['RA'], fiber_meta['DEC']]+[failsafe_dict(hdr,x[0]) for x in meta_dtype[8:]]
+            raw_meta.append(tuple(mdata))
+                    
+
+    np.save(SAVE_DIR+'/'+plate_name+'_calibrated_sky',data)
     raw_meta=np.array(raw_meta,dtype=meta_dtype)
-    return (raw_meta,no_spc_match)
+    return raw_meta
 
 if __name__=="__main__":
           main()
