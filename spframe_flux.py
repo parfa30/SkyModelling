@@ -9,33 +9,31 @@ Version:
 2.1 Mar, 2017 Refactoring by A. Slosar
 1.0 Apri, 2017 P. Fagrelius
 
-
 ==Inputs==
 This code takes the spectra from spFrame BOSS files and converts it into flux similar to that in spCframe files.
 Flux output is 10^-17 ergs/s/cm2/A.
 
 This conversion is made only for "sky" fibers as identified in the plug list in spframe files hdu[5]. These have 
-OBJTYPE=SKY. A full list of all sky fibers is saved in a pickle file 'sky_fibers.pkl' with associated plate and camera.
+OBJTYPE=SKY. A full list of all sky fibers is saved in a numpy file 'sky_fibers.npy' with associated plate and camera.
 
-The flux is converted with the equation spflux = eflux(spFrame[0])/spCalib.
+The flux is converted with the equation spflux = eflux[spFrame[0]]/spCalib.
 This is equal to spcframe flux without correction and distortion included. i.e spflux = spcflux/(corr*distort*R)
 
-??We are using only one calibration file for all conversions, which was selected from a good seeing day
+We are using only one calibration file for all conversions, which was selected from a good seeing day. This reduces
+the amount of PSF correction applied.
 
 ==Outputs==
-Running this code generates txt files that contain the following information:
-Plate, image number, fiber number, TAI_beg, TAI_end, RA, DEC, Camera type, Airmass, Alt, Exptime
-for each image with the calculated flux and wavelength solution for each fiber in each image for every plate.
+Running this code generates two numpy files:
+1) "raw_meta/platenum_raw_meta.npy": Raw meta fiels with the following data
+'PLATE','SPECNO','IMG','FIB','XFOCAL','YFOCAL','FIBER_RA','FIBER_DEC','TAI-BEG','TAI-END','RA','DEC','CAMERAS',
+'AIRMASS','ALT','AZ','EXPTIME','SEEING20','SEEING50','SEEING80','AIRTEMP','DEWPOINT','DUSTA','DUSTB','WINDD25M',
+'WINDS25M','GUSTD','GUSTS','HUMIDITY','PRESSURE','WINDD','WINDS'
+2) "platenum_calibrated_sky.npy": SPframe flat field electrons converted to flux, along with the wavelength, wavelenght
+dispersion, and the variance for the sky flux. ['SKY','WAVE','IVAR','DISP']. Each line index in a given plate
+file corresponds to the "SPECNO" in the corresponding raw meta file. 
 
 The flux is returned for lambda = 365-635nm for the blue cameras and lambda = 565-1040nm for red cameras, 
 along with the corresponding wavelength solution from the spcframe files in nm.
-
-Each text file is identified by its image number and contains the flux and corresponding data for every sky fiber
-in each camera for that image. They are saved in folders corresponding to the plate.
-
-When you run this script it will generate these files for every spframe in the /boss/spectro/redux file, or wherever 
-you save your data. 
-
 
 """
 from __future__ import print_function,division
@@ -115,7 +113,7 @@ def main():
 
     #Get Sky Fibers. 
     global Sky_fibers
-    Sky_fibers = np.load('/global/homes/p/parkerf/BOSS_Sky/SkyModelling/sky_fibers.npy')
+    Sky_fibers = np.load(os.getcwd()+'/sky_fibers.npy')
     print("Sky fibers identified for %i plates, total sky fibers=%i."%(len(np.unique(Sky_fibers['PLATE'])), len(Sky_fibers)))
 
     #Get Calib File. Using the same calibration file for ALL.
@@ -128,10 +126,11 @@ def main():
         CalibVector[camera] = data
     print("calibration data set")
 
+    #Run Script
     if parallel:
         ## implement if MPI
         #multiprocessing speedup
-        pool = multiprocessing.Pool(processes=32)
+        pool = multiprocessing.Pool(processes=24)
         pool.map(calc_flux_for_sky_fibers_for_plate, PLATES)
         pool.terminate()
     else:
@@ -211,7 +210,6 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
                 ('DEWPOINT','f4'),('DUSTA','f4'), ('DUSTB','f4'),('WINDD25M','f4'), ('WINDS25M','f4'), ('GUSTD','f4'), 
                 ('GUSTS','f4'), ('HUMIDITY','f4'), ('PRESSURE','f4'), ('WINDD','f4'), ('WINDS','f4')]
 
-
     for image_id in image_ids:
         print("identifier", image_id)
 
@@ -225,14 +223,13 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
         calib_data = CalibVector[Camera_type]
         Sky_flux = ffe_to_flux(sp_hdu, calib_data)
 
-        #get wavelength
+        #Collect data from spcframe file (wavelength, dispersion, ivar, bitmask)
         spcframe = fnmatch.filter(spCFrame_files, '*spCFrame-%s*' % image_id)[0]
         spc_hdu = fits.open(spcframe)
+
         logwaves = spc_hdu[3].data
         disps = spc_hdu[4].data
-        sigmas = spc_hdu[1].data
-
-        #get bitmask
+        ivars = spc_hdu[1].data
         bitmask = spc_hdu[2].data
 
         #Get fibers
@@ -257,13 +254,13 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
                 #Sky fiber flux and variance
                 sky_clean = remove_rejects(bitmask[fiber_id], Sky_flux[fiber_id])
                 sky_to_write = sky_clean[limits]
-                sigma_to_write = sigmas[fiber_id][limits]
+                ivar_to_write = ivars[fiber_id][limits]
 
                 #Create files
-                spec=np.zeros(len(sky_to_write),dtype=[('WAVE','f8'),('SKY','f8'),('SIGMA','f8'),('DISP','f8')])
+                spec=np.zeros(len(sky_to_write),dtype=[('WAVE','f8'),('SKY','f8'),('IVAR','f8'),('DISP','f8')])
                 spec['WAVE'] = wave_to_write
                 spec['SKY'] = sky_to_write
-                spec['SIGMA'] = sigma_to_write
+                spec['IVAR'] = ivar_to_write
                 spec['DISP'] = disp_to_write
                 specno+=1
                 data.append(spec)
@@ -280,5 +277,5 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
         np.save(META_DIR+plate_name+'_raw_meta',np.array(raw_meta,dtype=meta_dtype))
 
 if __name__=="__main__":
-          main()
+      main()
 
