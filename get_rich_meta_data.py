@@ -42,14 +42,14 @@ from astropy.time import Time, TimeDelta
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz, get_sun, get_moon
 from astropy import units as u 
 
-APACHE = EarthLocation.of_site('Apache Point Observatory')
+APACHE = EarthLocation.of_site('Apache Point')
 
 ##############
 #  SET DIRS #
 ##############
 
-RAW_META_DATA_DIR = '/global/homes/p/parkerf/BOSS_Sky/SkyModelling/'
-
+RAW_META_DATA_DIR = '/Volumes/PARKER/boss_files/new_sky_flux/' 
+SKY_FIBER_DIR = '/Users/parkerf/Research/SkyModel/SkyModelling/util/'
 
 def main():
 
@@ -81,7 +81,7 @@ def main():
     rich_df = pd.DataFrame(np.hstack(rich_results))
 
     #Get fiber meta data
-    sky_fiber_data = np.load('sky_fibers.npy') #This name will change
+    sky_fiber_data = np.load(SKY_FIBER_DIR+'sky_fibers.npy') #This name will change
     fiber_df = pd.DataFrame(sky_fiber_data)
     
     #Combine with previous data and save as new numpy object
@@ -89,7 +89,7 @@ def main():
     full_df = new_df.merge(fiber_df,on=['PLATE','CAMERAS','FIB'],how='left')
     rich_meta_array = full_df.to_records(index=False)
 
-    np.save('meta_rich',rich_meta_array)
+    np.save(RAW_META_DATA_DIR+'meta_rich',rich_meta_array)
     print("Done")
 
 
