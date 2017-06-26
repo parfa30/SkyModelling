@@ -50,14 +50,9 @@ APACHE = EarthLocation.of_site('Apache Point')
 ##############
 #  SET DIRS #
 ##############
-
-<<<<<<< HEAD
 RAW_META_DATA_DIR = '/Volumes/PARKER/boss_files/new_sky_flux/' 
-SKY_FIBER_DIR = '/Users/parkerf/Research/SkyModel/SkyModelling/util/'
-=======
-RAW_META_DATA_DIR = '/scratch2/scratchdirs/parkerf/new_sky_flux/raw_meta/'
-
->>>>>>> 854ad333d99b6444d925448cab5210159e59070a
+SKY_FIBER_DIR = os.getcwd() 
+###############
 
 def main():
 
@@ -92,14 +87,13 @@ def main():
     solar_flux = solar_dict['fluxobsflux']
     print("solar table loaded")
 
-    
+    #Get rich data
     pool = multiprocessing.Pool(processes=32)
     rich_results = pool.map(get_rich_data,raw_array)
-
     rich_df = pd.DataFrame(np.hstack(rich_results))
 
     #Get fiber meta data
-    sky_fiber_data = np.load(SKY_FIBER_DIR+'sky_fibers.npy') #This name will change
+    sky_fiber_data = np.load(SKY_FIBER_DIR+'/sky_fibers.npy') 
     fiber_df = pd.DataFrame(sky_fiber_data)
     
     #Combine with previous data and save as new numpy object
@@ -112,8 +106,7 @@ def main():
 
 
 def get_rich_data(raw_array):
-    """ Gets additional data about each image. Input is a pickle file that contains fits 
-    header info for every image in a given plate
+    """ Gets additional data about each image. i
     """
     PLATE, IMG, TAI, RA, DEC = raw_array
     print("Getting rich data for this plate/image ",PLATE,IMG)
@@ -128,14 +121,12 @@ def get_rich_data(raw_array):
     season, hour_start = get_season(time)
     this_solar_flux = get_solar_flux(solar_flux,time.value)
 
-
     rich_dtype=[('PLATE', 'i4'),('IMG', 'i4'),('TAI-BEG','f8'),('RA','f8'),('DEC','f8'),('MOON_LAT','f4'),('MOON_LON','f4'), ('SUN_LAT','f4'),('SUN_LON','f4'),('MOON_ALT','f4'),('MOON_AZ','f4'),('SUN_ALT','f4'), ('SUN_AZ','f4'), ('MOON_D','f8'), ('MOON_SEP','f8'), ('SUN_MOON_SEP','f8'),('SUN_ELONG','f8'),('DAYS2FULL','f4'),('ECL_LAT','f4'), ('ECL_LON','f4'), ('GAL_LAT','f4'), ('GAL_LON','f4'), ('AZ_CALC','f4'), ('FLI','f4'), ('SEASON','i4'), ('HOUR', 'i4'),('SOLARFLUX','f4')]
 
     rich_meta_data = np.array([(PLATE,IMG,TAI,RA,DEC,moon_lat,moon_lon, sun_lat, sun_lon, moon_alt, moon_az, sun_alt, sun_az, moon_dist, moon_sep, sun_moon_sep, sun_elong, days_to_full, ecl_lat, ecl_lon, gal_lat, gal_lon, az, fli, season, hour_start, this_solar_flux)],dtype=rich_dtype)
     
     print("Time: ", (datetime.now()-start).total_seconds())
     return rich_meta_data
-
 
 def moon_and_sun(time, RA, DEC):
     """
