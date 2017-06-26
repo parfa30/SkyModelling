@@ -33,10 +33,13 @@ try:
     import cPickle as pickle
 except:
     import pickle
+import matplotlib
+matplotlib.use("Agg")
 import numpy as np
 import multiprocessing
 import ephem
 import pandas as pd
+import PyQt4
 from datetime import datetime
 from astropy.time import Time, TimeDelta
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz, get_sun, get_moon
@@ -48,18 +51,33 @@ APACHE = EarthLocation.of_site('Apache Point')
 #  SET DIRS #
 ##############
 
+<<<<<<< HEAD
 RAW_META_DATA_DIR = '/Volumes/PARKER/boss_files/new_sky_flux/' 
 SKY_FIBER_DIR = '/Users/parkerf/Research/SkyModel/SkyModelling/util/'
+=======
+RAW_META_DATA_DIR = '/scratch2/scratchdirs/parkerf/new_sky_flux/raw_meta/'
+
+>>>>>>> 854ad333d99b6444d925448cab5210159e59070a
 
 def main():
 
+    #Get raw meta files
+    raw_files = glob.glob(RAW_META_DATA_DIR+"*_raw_meta.npy")
+    raw_data = []
+    for file in raw_files:
+        data = np.load(file)
+        if len(data) > 0:
+            raw_data.append(np.stack(data))
+
+    raw_data = np.hstack(raw_data)
+    print("Got all the raw meta files")
+    
     #Send only critical info to fetch rich metadata to save time
-    raw_meta_file = 'meta_raw.npy'
-    raw_data = np.load(RAW_META_DATA_DIR+raw_meta_file)
-    raw_df = pd.DataFrame(raw_data)
+    raw_df = pd.DataFrame.from_records(raw_data, columns = raw_data.dtype.names)
     needed_info = raw_df[['PLATE','IMG','TAI-BEG','RA','DEC']]
     needed_info.drop_duplicates(inplace=True)
     raw_array = needed_info.as_matrix()
+    print("Observation number: ",len(raw_array))
 
     # Get Solar Flux Data
     SOLAR_FILE = 'ftp://ftp.geolab.nrcan.gc.ca/data/solar_flux/daily_flux_values/fluxtable.txt'
@@ -99,6 +117,7 @@ def get_rich_data(raw_array):
     """
     PLATE, IMG, TAI, RA, DEC = raw_array
     print("Getting rich data for this plate/image ",PLATE,IMG)
+    start = datetime.now()
  
     time = Time(TAI/86400., scale='tai', format='mjd', location=APACHE)
     moon_lat, moon_lon, sun_lat, sun_lon, moon_alt, moon_az, sun_alt, sun_az, moon_dist, moon_sep, sun_moon_sep, sun_elong = moon_and_sun(time, RA, DEC)
@@ -114,6 +133,7 @@ def get_rich_data(raw_array):
 
     rich_meta_data = np.array([(PLATE,IMG,TAI,RA,DEC,moon_lat,moon_lon, sun_lat, sun_lon, moon_alt, moon_az, sun_alt, sun_az, moon_dist, moon_sep, sun_moon_sep, sun_elong, days_to_full, ecl_lat, ecl_lon, gal_lat, gal_lon, az, fli, season, hour_start, this_solar_flux)],dtype=rich_dtype)
     
+    print("Time: ", (datetime.now()-start).total_seconds())
     return rich_meta_data
 
 
