@@ -21,6 +21,7 @@ Date: June, 2017
 """
 import glob 
 import os
+from datetime import datetime
 import multiprocessing
 import numpy as np
 import pandas as pd
@@ -32,7 +33,7 @@ class FitSpectra(object):
     def __init__(self):
         #####UPDATE THESE DIRECTORIES#######
         #Directory to save data
-        self.SAVE_DIR = '/scratch2/scratchdirs/parkerf/new_split_flux/'
+        self.SAVE_DIR = '/scratch2/scratchdirs/parkerf/new_split_flux/blue_split'
         #Directory where all SpFrame flux files reside
         self.SPECTRA_DIR = '/scratch2/scratchdirs/parkerf/new_sky_flux/'
         ####################################
@@ -47,7 +48,7 @@ class FitSpectra(object):
 
         #Identify which data you want to look at
         #Options: test (10 total), blue, red, full
-        self.ttype = 'full'
+        self.ttype = 'blue'
 
     def run(self):
         self.get_plates_needed()
@@ -55,12 +56,12 @@ class FitSpectra(object):
         self.get_vac_lines()
     
         #Run script
-        #for spectra_file in self.SPECTRA:
-        #    self.fit_and_separate_spectra(spectra_file)
+        for spectra_file in self.SPECTRA:
+            self.fit_and_separate_spectra(spectra_file)
 
-        pool2 = multiprocessing.Pool(processes=2)
-        pool2.map(fit_and_separate_spectra, self.SPECTRA)
-        pool2.terminate()
+        #pool2 = multiprocessing.Pool(processes=2)
+        #pool2.map(fit_and_separate_spectra, self.SPECTRA)
+        #pool2.terminate()
 
     
     def get_plates_needed(self):
