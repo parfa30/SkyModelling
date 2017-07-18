@@ -33,9 +33,9 @@ class FitSpectra(object):
     def __init__(self):
         #####UPDATE THESE DIRECTORIES#######
         #Directory to save data
-        self.SAVE_DIR = '/scratch2/scratchdirs/parkerf/new_split_flux/blue_split'
+        self.SAVE_DIR = '/Volumes/PARKER/boss_files/new_split_flux/blue_split/'
         #Directory where all SpFrame flux files reside
-        self.SPECTRA_DIR = '/scratch2/scratchdirs/parkerf/new_sky_flux/'
+        self.SPECTRA_DIR = '/Volumes/PARKER/boss_files/new_sky_flux/'
         ####################################
 
         # Load spectra data
@@ -48,7 +48,7 @@ class FitSpectra(object):
 
         #Identify which data you want to look at
         #Options: test (10 total), blue, red, full
-        self.ttype = 'blue'
+        self.ttype = 'test'
 
     def run(self):
         self.get_plates_needed()
@@ -210,8 +210,7 @@ class FitSpectra(object):
 
         self.plate_num = spectra_file[-23:-19]
         print("Fitting spectra in plate %s" % self.plate_num)
-        self.spectra = np.load(spectra_file)
-        self.spectra_length = len(self.spectra)
+        self.spectra = np.load(spectra_file)    
         self.this_plate = self.MetaData[self.MetaData['PLATE'] == int(self.plate_num)]
 
         if self.ttype == 'test':
@@ -231,6 +230,8 @@ class FitSpectra(object):
             max_num = 10 #len(spectra) Number of spectra in a given plate that you want to run this for. Mostly for debugging
             self.specnos = np.random.choice(self.this_plate['SPECNO'], size=max_num)
 
+        self.spectra_length = len(self.specnos)
+
     def fit_and_separate_spectra(self, spectra_file):
         start = datetime.now()
         self.get_specnos(spectra_file)
@@ -238,10 +239,10 @@ class FitSpectra(object):
         pool = multiprocessing.Pool(processes=4)
         data = pool.map(self.fit_and_split_spectrum, self.specnos)
         pool.terminate()
-        data = np.stack(data)
+        #data = np.vstack(data)
         np.save(self.SAVE_DIR+self.plate_num+'_split_fit',data)
         total_time = (datetime.now() - start).total_seconds()
-        print("Total time for spectra %d: %f" %(self.plate_num,total_time))
+        print("Total time for spectra %s: %f" %(self.plate_num,total_time))
 
 
     def fit_and_split_spectrum(self, specno):
