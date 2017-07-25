@@ -44,7 +44,7 @@ except:
     import pickle
 import multiprocessing
 import numpy as np
-import bitmask as b  
+import util.bitmask as b  
 from astropy.io import fits
 from datetime import datetime
 
