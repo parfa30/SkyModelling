@@ -205,10 +205,10 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
     specno = -1
     
     meta_dtype=[('PLATE', 'i4'),('SPECNO','i4'),('IMG', 'i4'),('FIB', 'i4'), ('XFOCAL','f4'),('YFOCAL','f4'),('FIBER_RA','f4'),
-                ('FIBER_DEC','f4'), ('TAI-BEG','f8'),('TAI-END','f8'),('RA','f8'), ('DEC','f8'),('CAMERAS','S2'),('AIRMASS','f4'),
-                ('ALT','f8'), ('AZ','f8'),('EXPTIME','f4'), ('SEEING20','f4'),('SEEING50','f4'),('SEEING80','f4'), ('AIRTEMP','f4'), 
-                ('DEWPOINT','f4'),('DUSTA','f4'), ('DUSTB','f4'),('WINDD25M','f4'), ('WINDS25M','f4'), ('GUSTD','f4'), 
-                ('GUSTS','f4'), ('HUMIDITY','f4'), ('PRESSURE','f4'), ('WINDD','f4'), ('WINDS','f4')]
+                ('FIBER_DEC','f4'), ('MJD','f8'),('TAI-BEG','f8'),('TAI-END','f8'),('RA','f8'), ('DEC','f8'),('CAMERAS','S2'),
+                ('AIRMASS','f4'),('ALT','f8'), ('AZ','f8'),('EXPTIME','f4'), ('SEEING20','f4'),('SEEING50','f4'),('SEEING80','f4'), 
+                ('AIRTEMP','f4'),('DEWPOINT','f4'),('DUSTA','f4'), ('DUSTB','f4'),('WINDD25M','f4'), ('WINDS25M','f4'), 
+                ('GUSTD','f4'),('GUSTS','f4'), ('HUMIDITY','f4'), ('PRESSURE','f4'), ('WINDD','f4'), ('WINDS','f4')]
 
     for image_id in image_ids:
         print("identifier", image_id)
