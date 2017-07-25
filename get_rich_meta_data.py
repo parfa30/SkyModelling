@@ -39,8 +39,9 @@ import numpy as np
 import multiprocessing
 import ephem
 import pandas as pd
-import PyQt4
+#import PyQt4
 from datetime import datetime
+from astropy.io import fits
 from astropy.time import Time, TimeDelta
 from astropy.coordinates import SkyCoord, EarthLocation, AltAz, get_sun, get_moon
 from astropy import units as u 
@@ -57,7 +58,7 @@ SKY_FIBER_DIR = os.getcwd()
 def main():
 
     #Get raw meta files
-    raw_files = glob.glob(RAW_META_DATA_DIR+"*_raw_meta.npy")
+    raw_files = glob.glob(RAW_META_DATA_DIR+"/raw_meta/*_raw_meta.npy")
     raw_data = []
     for file in raw_files:
         data = np.load(file)
@@ -95,14 +96,23 @@ def main():
     #Get fiber meta data
     sky_fiber_data = np.load(SKY_FIBER_DIR+'/sky_fibers.npy') 
     fiber_df = pd.DataFrame(sky_fiber_data)
+
+    #Get quality
+    qhdu = fits.open(os.getcwd()+'/util/platelist.fits')
+    qdata = qhdu[1].data
+    platelist = pd.DataFrame([qdata['PLATE'], qdata['MJD'], qdata['PLATEQUALITY']]).T
+    platelist.columns = ['PLATE', 'MJD', 'QUALITY']
+    qhdu.close()
     
     #Combine with previous data and save as new numpy object
     new_df = raw_df.merge(rich_df,on=['PLATE','IMG','TAI-BEG','RA','DEC'],how='left')
-    full_df = new_df.merge(fiber_df,on=['PLATE','CAMERAS','FIB'],how='left')
+    quality_df = new_df.merge(platelist,on=['PLATE','MJD'],how='left')
+    full_df = quality_df.merge(fiber_df,on=['PLATE','CAMERAS','FIB'],how='left')
     rich_meta_array = full_df.to_records(index=False)
 
     np.save(RAW_META_DATA_DIR+'meta_rich',rich_meta_array)
     print("Done")
+
 
 
 def get_rich_data(raw_array):
@@ -120,6 +130,7 @@ def get_rich_data(raw_array):
     fli = frac_lun_ill(np.deg2rad(moon_lon), np.deg2rad(sun_lon), np.deg2rad(moon_lat))
     season, hour_start = get_season(time)
     this_solar_flux = get_solar_flux(solar_flux,time.value)
+
 
     rich_dtype=[('PLATE', 'i4'),('IMG', 'i4'),('TAI-BEG','f8'),('RA','f8'),('DEC','f8'),('MOON_LAT','f4'),('MOON_LON','f4'), ('SUN_LAT','f4'),('SUN_LON','f4'),('MOON_ALT','f4'),('MOON_AZ','f4'),('SUN_ALT','f4'), ('SUN_AZ','f4'), ('MOON_D','f8'), ('MOON_SEP','f8'), ('SUN_MOON_SEP','f8'),('SUN_ELONG','f8'),('DAYS2FULL','f4'),('ECL_LAT','f4'), ('ECL_LON','f4'), ('GAL_LAT','f4'), ('GAL_LON','f4'), ('AZ_CALC','f4'), ('FLI','f4'), ('SEASON','i4'), ('HOUR', 'i4'),('SOLARFLUX','f4')]
 
