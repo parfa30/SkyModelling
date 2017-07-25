@@ -33,9 +33,9 @@ class FitSpectra(object):
     def __init__(self):
         #####UPDATE THESE DIRECTORIES#######
         #Directory to save data
-        self.SAVE_DIR = '/Volumes/PARKER/boss_files/new_split_flux/blue_split/'
+        self.SAVE_DIR = '/global/cscratch1/sd/parkerf/split_flux/blue_split/' 
         #Directory where all SpFrame flux files reside
-        self.SPECTRA_DIR = '/Volumes/PARKER/boss_files/new_sky_flux/'
+        self.SPECTRA_DIR = '/global/cscratch1/sd/parkerf/sky_flux/'
         ####################################
 
         # Load spectra data
@@ -48,20 +48,21 @@ class FitSpectra(object):
 
         #Identify which data you want to look at
         #Options: test (10 total), blue, red, full
-        self.ttype = 'test'
+        self.ttype = 'blue'
 
     def run(self):
         self.get_plates_needed()
         self.get_airglow_spectra()
         self.get_vac_lines()
+        print("got Airglow Lines")
     
         #Run script
-        for spectra_file in self.SPECTRA:
-            self.fit_and_separate_spectra(spectra_file)
+        #for spectra_file in self.SPECTRA:
+        #    self.fit_and_separate_spectra(spectra_file)
 
-        #pool2 = multiprocessing.Pool(processes=2)
-        #pool2.map(fit_and_separate_spectra, self.SPECTRA)
-        #pool2.terminate()
+        pool2 = multiprocessing.Pool(processes=12)
+        pool2.map(self.fit_and_separate_spectra, self.SPECTRA)
+        pool2.terminate()
 
     
     def get_plates_needed(self):
@@ -109,7 +110,7 @@ class FitSpectra(object):
 
         self.wave = spectrum['WAVE'][ok]
         self.sky = spectrum['SKY'][ok]
-        self.ivar = spectrum['SIGMA'][ok]
+        self.ivar = spectrum['IVAR'][ok]
         self.disp = spectrum['DISP'][ok]
 
 
@@ -144,11 +145,7 @@ class FitSpectra(object):
 
         AA = []
         for line in vaclines:
-            ss = []
-            for i, w in enumerate(wave_range):
-                sig = disp_range[i]
-                ss.append(np.exp(-0.5*((w-line)/sig)**2))
-            AA.append(ss)
+            AA.append(np.exp(-0.5*((wave_range-line)/disp_range)**2))
         return np.vstack(AA)
 
 
@@ -236,9 +233,13 @@ class FitSpectra(object):
         start = datetime.now()
         self.get_specnos(spectra_file)
 
-        pool = multiprocessing.Pool(processes=4)
-        data = pool.map(self.fit_and_split_spectrum, self.specnos)
-        pool.terminate()
+        data = []
+        for specno in self.specnos:
+            d = self.fit_and_split_spectrum(specno)
+            data.append(d)
+        #pool = multiprocessing.Pool(processes=64)
+        #data = pool.map(self.fit_and_split_spectrum, self.specnos)
+        #pool.terminate()
         #data = np.vstack(data)
         np.save(self.SAVE_DIR+self.plate_num+'_split_fit',data)
         total_time = (datetime.now() - start).total_seconds()
