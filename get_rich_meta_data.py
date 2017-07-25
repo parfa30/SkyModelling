@@ -94,7 +94,7 @@ def main():
     rich_df = pd.DataFrame(np.hstack(rich_results))
 
     #Get fiber meta data
-    sky_fiber_data = np.load(SKY_FIBER_DIR+'/sky_fibers.npy') 
+    sky_fiber_data = np.load(SKY_FIBER_DIR+'/util/sky_fibers.npy') 
     fiber_df = pd.DataFrame(sky_fiber_data)
 
     #Get quality

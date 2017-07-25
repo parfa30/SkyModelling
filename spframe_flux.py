@@ -16,7 +16,7 @@ Flux output is 10^-17 ergs/s/cm2/A.
 This conversion is made only for "sky" fibers as identified in the plug list in spframe files hdu[5]. These have 
 OBJTYPE=SKY. A full list of all sky fibers is saved in a numpy file 'sky_fibers.npy' with associated plate and camera.
 
-The flux is converted with the equation spflux = eflux[spFrame[0]]/spCalib.
+he flux is converted with the equation spflux = eflux[spFrame[0]]/spCalib.
 This is equal to spcframe flux without correction and distortion included. i.e spflux = spcflux/(corr*distort*R)
 
 We are using only one calibration file for all conversions, which was selected from a good seeing day. This reduces
@@ -53,11 +53,11 @@ from datetime import datetime
 #. SETUP DIRECTORIES. #
 #######################
 # identify directory to save data
-SAVE_DIR = '/scratch2/scratchdirs/parkerf/new_sky_flux/' #this is the folder where you want to save the output
+SAVE_DIR ='/Volumes/PARKER/boss_files/new_sky_flux/'# '/scratch2/scratchdirs/parkerf/new_sky_flux/' #this is the folder where you want to save the output
 
 # identify spframe directory
-BASE_DIR = '/global/projecta/projectdirs/sdss/data/sdss/dr12/boss/spectro/redux/'
-FOLDERS = ['v5_7_0/','v5_7_2/']
+BASE_DIR = '/Volumes/PARKER/boss_files/' #'/global/projecta/projectdirs/sdss/data/sdss/dr12/boss/spectro/redux/'
+FOLDERS =['raw_files/'] # ['v5_7_0/','v5_7_2/']
 
 # detector 
 DETECTORS = {'b1':[[365,635], 'b1'], 'b2':[[365,635], 'b2'], 'r1':[[565,1040], 'b1'], 'r2':[[565,1040], 'b2']}
@@ -113,7 +113,7 @@ def main():
 
     #Get Sky Fibers. 
     global Sky_fibers
-    Sky_fibers = np.load(os.getcwd()+'/sky_fibers.npy')
+    Sky_fibers = np.load(os.getcwd()+'/util/sky_fibers.npy')
     print("Sky fibers identified for %i plates, total sky fibers=%i."%(len(np.unique(Sky_fibers['PLATE'])), len(Sky_fibers)))
 
     #Get Calib File. Using the same calibration file for ALL.
@@ -121,7 +121,7 @@ def main():
     global CalibVector
     CalibVector = {}
     for camera in CAMERAS:
-        hdu = fits.open(BASE_DIR+'v5_7_0/5399/spFluxcalib-%s-00139379.fits.gz' % camera)
+        hdu = fits.open(BASE_DIR+'raw_files/5399/spFluxcalib-%s-00139379.fits.gz' % camera)
         data = hdu[0].data
         CalibVector[camera] = data
     print("calibration data set")
@@ -130,7 +130,7 @@ def main():
     if parallel:
         ## implement if MPI
         #multiprocessing speedup
-        pool = multiprocessing.Pool(processes=24)
+        pool = multiprocessing.Pool(processes=2)
         pool.map(calc_flux_for_sky_fibers_for_plate, PLATES)
         pool.terminate()
     else:
