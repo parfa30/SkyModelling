@@ -91,20 +91,18 @@ def main():
                 PLATE_DIRS.append(pp)
 
     #Compare with what has already been done
-    COMPLETE_DIRS = os.listdir(SAVE_DIR)
-    Complete_Plate_Names = [d[0:4] for d in COMPLETE_DIRS]
+    COMPLETE_DIRS = glob.glob(SAVE_DIR+'/*_calibrated_sky.npy')
+    Complete_Plate_Names = [os.path.split(d)[1][0:4] for d in COMPLETE_DIRS]
     All_Plate_Names = [d[-4:] for d in PLATE_DIRS]
 
     plates_needed_idx = [i for i, x in enumerate(All_Plate_Names) if x not in Complete_Plate_Names]
     PLATES = [PLATE_DIRS[x] for x in plates_needed_idx]
 
-    if (nplates>0):
-        PLATES=PLATES[:nplates]
-                
     print("Complete Plates: ",len(Complete_Plate_Names))
     print("ALL Plates: ", len(All_Plate_Names))
     print("Number of plates to go: ", len(PLATES))
 
+    PLATES = ['/global/projecta/projectdirs/sdss/data/sdss/dr12/boss/spectro/redux/v5_7_0/3683']
     #Make a meta data folder
     global META_DIR
     META_DIR = SAVE_DIR+'/raw_meta/'
@@ -125,7 +123,7 @@ def main():
     if parallel:
         ## implement if MPI
         #multiprocessing speedup
-        pool = multiprocessing.Pool(processes=64)
+        pool = multiprocessing.Pool(processes=10)
         pool.map(calc_flux_for_sky_fibers_for_plate, PLATES)
         pool.terminate()
     else:
@@ -271,8 +269,13 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
                 raw_meta.append(tuple(mdata))
                     
     if get_flux:
+        filen = SAVE_DIR+'/'+plate_name+'_calibrated_sky'
+        if os.path.exists(filen):
+            os.remove(filen)
         np.save(SAVE_DIR+'/'+plate_name+'_calibrated_sky',data)
     if get_meta:
+        filen = META_DIR+plate_name+'_raw_meta'
+        os.remove(filen) if os.path.exists(filen) else None
         np.save(META_DIR+plate_name+'_raw_meta',np.array(raw_meta,dtype=meta_dtype))
 
 if __name__=="__main__":
