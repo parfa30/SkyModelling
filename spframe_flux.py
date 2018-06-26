@@ -59,18 +59,16 @@ from datetime import datetime
 #. SETUP DIRECTORIES. #
 #######################
 # identify directory to save data
-SAVE_DIR =  '/global/cscratch1/sd/parkerf/sky_flux/'#'/scratch2/scratchdirs/parkerf/new_sky_flux/' #this is the folder where you want to save the output
+SAVE_DIR =  '/global/cscratch1/sd/parkerf/sky_flux_new_calib/'#'/scratch2/scratchdirs/parkerf/new_sky_flux/' #this is the folder where you want to save the output
 
 # identify spframe directory
 BASE_DIR = '/global/projecta/projectdirs/sdss/data/sdss/dr12/boss/spectro/redux/'
 FOLDERS = ['v5_7_0/','v5_7_2/']
 
-# detector 
+# detector limits
 DETECTORS = {'b1':[[365,635], 'b1'], 'b2':[[365,635], 'b2'], 'r1':[[565,1040], 'b1'], 'r2':[[565,1040], 'b2']}
 
 parallel=True
-MPI=False
-nplates=0 # use just this many plates
 
 #Get flux or meta data?
 get_flux = True 
@@ -102,7 +100,6 @@ def main():
     print("ALL Plates: ", len(All_Plate_Names))
     print("Number of plates to go: ", len(PLATES))
 
-    PLATES = ['/global/projecta/projectdirs/sdss/data/sdss/dr12/boss/spectro/redux/v5_7_0/3683']
     #Make a meta data folder
     global META_DIR
     META_DIR = SAVE_DIR+'/raw_meta/'
@@ -110,19 +107,12 @@ def main():
         os.makedirs(META_DIR)
 
     #Get Calib File. Using the same calibration file for ALL.
-    CAMERAS = ['b1', 'b2', 'r1', 'r2']
     global CalibVector
-    CalibVector = {}
-    for camera in CAMERAS:
-        hdu = fits.open(BASE_DIR+'v5_7_0/5399/spFluxcalib-%s-00139379.fits.gz' % camera)
-        data = hdu[0].data
-        CalibVector[camera] = data
+    CalibVector = pickle.load(open('util/CalibVector.pkl','rb'))
     print("calibration data set")
 
     #Run Script
     if parallel:
-        ## implement if MPI
-        #multiprocessing speedup
         pool = multiprocessing.Pool(processes=10)
         pool.map(calc_flux_for_sky_fibers_for_plate, PLATES)
         pool.terminate()
@@ -131,19 +121,6 @@ def main():
 
     print("Done")
 
-def ffe_to_flux(spframe_hdu, calib_data):
-    """ Flat fielded electrons from spFrame to flux in 10^-17 ergs/s/cm2/A.
-    flux = eflux*calibration, where calib = calibration^-1
-    
-    INPUTS:  spframe_hdu = hdu list of the spFrame. Use data sky data and super flat
-             calib_vect = calibration file name associated with the spframe 
-    OUTPUT:  numpy array of spframe converted into flux units
-    """
-    #eflux  = #6 is sky, 0 is residuals
-    eflux = spframe_hdu[6].data + spframe_hdu[0].data 
-    spflux = eflux/calib_data
-    
-    return spflux
 
 def remove_rejects(bitmask, sky_flux):
     """Removes any pixels that are flagged in spcframe as FULLREJECT or
@@ -208,31 +185,47 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
     for image_id in image_ids:
         print("identifier", image_id)
 
-        #Get sky data and header information for spFrame
+        #Get spFrame data and header
         sp_file = fnmatch.filter(spFrame_files, '*%s*' % image_id)[0]
         sp_hdu = fits.open(sp_file)
         hdr = sp_hdu[0].header
         plug = sp_hdu[5].data
-        Camera_type = hdr['CAMERAS'] 
+        Camera = hdr['CAMERAS'] 
         image_num = hdr['EXPOSURE']
-
-        calib_data = CalibVector[Camera_type]
-        Sky_flux = ffe_to_flux(sp_hdu, calib_data)
+        cam_lims, det_num = DETECTORS[Camera_type]
 
         #Collect data from spcframe file (wavelength, dispersion, ivar, bitmask)
         spcframe = fnmatch.filter(spCFrame_files, '*spCFrame-%s*' % image_id)[0]
         spc_hdu = fits.open(spcframe)
 
+        #Get wavelength solution and limit it so that spcframe and frame are same lengths
         logwaves = spc_hdu[3].data
-        disps = spc_hdu[4].data
-        ivars = spc_hdu[1].data
-        bitmask = spc_hdu[2].data
+        waves = (10**logwaves)/10.
+        limits = np.where((wave > cam_lims[0]) & (wave < cam_lims[1]))
+        logwave = logwaves[limits]
+        wave = waves[limits]
 
-        #Get fibers
-        cam_lims, det_num = DETECTORS[Camera_type]
+        #Calculate dispersion in nm
+        disps = spc_hdu[4].data[limits]
+        disp = 10**(disps*10**(-4)*logwave)/10.
+
+        #Calculate ivar
+        ivars = spc_hdu[1].data[limits]
+
+        # Convert spframe flat field electrons to flux
+        binsize = logwave - np.roll(logwave, 1)
+        binsize[0] = 0
+        R = np.ones(len(logwave))*10**-4/binsize
+        calib = CalibVector[Camera][limits]
+        eflux = sp_hdu[6].data + sp_hdu[0].data 
+        spflux = eflux[limits] * (R/calib)
+
+        #Remove rejects
+        bitmask = spc_hdu[2].data
+        sky_flux = remove_rejects(bitmask, spflux)
         
-        fiber_data = plug[plug['OBJTYPE'] == 'SKY']
-        for fiber_meta in fiber_data:
+        image_sky_fibers = plug[plug['OBJTYPE'] == 'SKY']
+        for fiber_meta in image_sky_fibers:
             fiber_num = fiber_meta['FIBERID'] - 1 #For python counting
             if fiber_num >= 500:
                 fiber_id = fiber_num-500
@@ -240,25 +233,12 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
                 fiber_id = fiber_num
        
             if get_flux: 
-                #Wavelength solution and dispersion
-                logwave = logwaves[fiber_id]
-                wave = (10**logwave)/10.
-                limits = np.where((wave > cam_lims[0]) & (wave < cam_lims[1]))
-                wave_to_write = wave[limits]
-                disp = 10**(disps[fiber_id]*10**(-4)*logwave)/10.
-                disp_to_write = disp[limits] #wavelength dispersion in nm
-
-                #Sky fiber flux and variance
-                sky_clean = remove_rejects(bitmask[fiber_id], Sky_flux[fiber_id])
-                sky_to_write = sky_clean[limits]
-                ivar_to_write = ivars[fiber_id][limits]
-
                 #Create files
                 spec=np.zeros(len(sky_to_write),dtype=[('WAVE','f8'),('SKY','f8'),('IVAR','f8'),('DISP','f8')])
-                spec['WAVE'] = wave_to_write
-                spec['SKY'] = sky_to_write
-                spec['IVAR'] = ivar_to_write
-                spec['DISP'] = disp_to_write
+                spec['WAVE'] = wave[fiber_id]
+                spec['SKY'] = sky_flux[fiber_id]
+                spec['IVAR'] = ivars[fiber_id]
+                spec['DISP'] = disp[fiber_id]
                 specno+=1
                 data.append(spec)
 
