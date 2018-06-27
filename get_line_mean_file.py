@@ -35,7 +35,7 @@ def main():
         os.makedirs(DATA_DIR+'rich_mean/')
 
     global Lines
-    Lines = pickle.load(open(os.getcwd()+'/util/line_file.pkl','rb'))
+    Lines = pickle.load(open(os.getcwd()+'/util/line_file_updatedZ.pkl','rb'))
 
    
     #Get data

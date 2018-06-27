@@ -34,7 +34,7 @@ DATA_DIR = '/global/cscratch1/sd/parkerf/sky_flux/' #'/Volumes/PFagrelius_Backup
 
 def main():
     global Lines
-    Lines = pickle.load(open(os.getcwd()+'/util/line_file.pkl','rb'))
+    Lines = pickle.load(open(os.getcwd()+'/util/line_file_updated.pkl','rb'))
 
     if not os.path.exists(DATA_DIR+'rich_plus/'):
         os.makedirs(DATA_DIR+'rich_plus/')
@@ -70,7 +70,8 @@ def get_line_sums(rich_file):
     #get spframe flux data
     plate = np.unique(Meta['PLATE'])[0]
     data = np.load(DATA_DIR+'/%d_calibrated_sky.npy'%plate)
-    num_pix = 10 #+/- pixels used for sum
+    num_pix_lines = 5 #+/- pixels used for sum
+    num_pix_cont = 1
     for meta in Meta:
         spectrum = data[meta['SPECNO']]
 
@@ -84,9 +85,9 @@ def get_line_sums(rich_file):
             Type, line = info
             my_pix = np.argmin(np.abs(wave - line))
             if Type == 'cont':
-                flux = np.mean(sky[my_pix - num_pix: my_pix + num_pix]) 
+                flux = np.mean(sky[my_pix - num_pix_cont: my_pix + num_pix_cont]) 
             elif Type == 'line':
-                flux = np.sum(sky[my_pix - num_pix: my_pix + num_pix]) 
+                flux = np.sum(sky[my_pix - num_pix_lines: my_pix + num_pix_lines])
             else: 
                 print("not a good type")
 
