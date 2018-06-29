@@ -113,7 +113,7 @@ def main():
 
     #Run Script
     if parallel:
-        pool = multiprocessing.Pool(processes=10)
+        pool = multiprocessing.Pool(processes=64)
         pool.map(calc_flux_for_sky_fibers_for_plate, PLATES)
         pool.terminate()
     else:
@@ -192,7 +192,11 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
         plug = sp_hdu[5].data
         Camera = hdr['CAMERAS'] 
         image_num = hdr['EXPOSURE']
-        cam_lims, det_num = DETECTORS[Camera_type]
+        cam_lims, det_num = DETECTORS[Camera]
+
+        # Get flat field electrons and calibration vector
+        calib = CalibVector[Camera]
+        eflux = sp_hdu[6].data + sp_hdu[0].data
 
         #Collect data from spcframe file (wavelength, dispersion, ivar, bitmask)
         spcframe = fnmatch.filter(spCFrame_files, '*spCFrame-%s*' % image_id)[0]
@@ -200,30 +204,18 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
 
         #Get wavelength solution and limit it so that spcframe and frame are same lengths
         logwaves = spc_hdu[3].data
-        waves = (10**logwaves)/10.
-        limits = np.where((wave > cam_lims[0]) & (wave < cam_lims[1]))
-        logwave = logwaves[limits]
-        wave = waves[limits]
 
         #Calculate dispersion in nm
-        disps = spc_hdu[4].data[limits]
-        disp = 10**(disps*10**(-4)*logwave)/10.
+        disps = spc_hdu[4].data
+        disp = 10**(disps*10**(-4)*logwaves)/10.
 
         #Calculate ivar
-        ivars = spc_hdu[1].data[limits]
-
-        # Convert spframe flat field electrons to flux
-        binsize = logwave - np.roll(logwave, 1)
-        binsize[0] = 0
-        R = np.ones(len(logwave))*10**-4/binsize
-        calib = CalibVector[Camera][limits]
-        eflux = sp_hdu[6].data + sp_hdu[0].data 
-        spflux = eflux[limits] * (R/calib)
+        ivars = spc_hdu[1].data
 
         #Remove rejects
         bitmask = spc_hdu[2].data
-        sky_flux = remove_rejects(bitmask, spflux)
         
+        # Get calibrated flux for sky fibers
         image_sky_fibers = plug[plug['OBJTYPE'] == 'SKY']
         for fiber_meta in image_sky_fibers:
             fiber_num = fiber_meta['FIBERID'] - 1 #For python counting
@@ -233,12 +225,26 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
                 fiber_id = fiber_num
        
             if get_flux: 
+                # Get limits for the wavelength solution so spcframe and spframe are same length
+                logwave = logwaves[fiber_id]
+                wave = (10**logwave)/10
+                limits = np.where((wave > cam_lims[0]) & (wave < cam_lims[1]))
+                binsize = logwave - np.roll(logwave, 1)
+                binsize[0] = 0
+                R = np.ones(len(logwave))*10**-4/binsize 
+
+                # Calibrate spframe flux
+                spflux = eflux[fiber_id][limits] * (R[limits]/calib[fiber_id][limits])
+
+                # Get rid of outliers
+                sky_flux = remove_rejects(bitmask[fiber_id][limits], spflux)
+
                 #Create files
-                spec=np.zeros(len(sky_to_write),dtype=[('WAVE','f8'),('SKY','f8'),('IVAR','f8'),('DISP','f8')])
-                spec['WAVE'] = wave[fiber_id]
-                spec['SKY'] = sky_flux[fiber_id]
-                spec['IVAR'] = ivars[fiber_id]
-                spec['DISP'] = disp[fiber_id]
+                spec=np.zeros(len(sky_flux),dtype=[('WAVE','f8'),('SKY','f8'),('IVAR','f8'),('DISP','f8')])
+                spec['WAVE'] = wave[limits]
+                spec['SKY'] = sky_flux
+                spec['IVAR'] = ivars[fiber_id][limits]
+                spec['DISP'] = disp[fiber_id][limits]
                 specno+=1
                 data.append(spec)
 
