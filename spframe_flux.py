@@ -236,6 +236,10 @@ def calc_flux_for_sky_fibers_for_plate(plate_folder):
                 # Calibrate spframe flux
                 spflux = eflux[fiber_id][limits] * (R[limits]/calib[fiber_id][limits])
 
+                # Add in missing flux
+                add = 0.027356
+                spflux = spflux + spflux*add
+
                 # Get rid of outliers
                 sky_flux = remove_rejects(bitmask[fiber_id][limits], spflux)
 
