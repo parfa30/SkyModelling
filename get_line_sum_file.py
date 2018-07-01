@@ -30,7 +30,7 @@ import pickle
 from datetime import datetime
 
 #Identify the folder where you data is saved
-DATA_DIR = '/global/cscratch1/sd/parkerf/sky_flux/' #'/Volumes/PFagrelius_Backup/sky_data/sky_flux/'
+DATA_DIR = '/global/cscratch1/sd/parkerf/sky_flux_corrected/' #'/Volumes/PFagrelius_Backup/sky_data/sky_flux/'
 
 def main():
     global Lines
@@ -60,7 +60,6 @@ def main():
 def get_line_sums(rich_file):
     print(rich_file)
     Meta = astropy.table.Table.read(rich_file)
-
     #add columns to astropy.table for each line
     for camera, lines in Lines.items():
         if (camera == 'b1')|(camera=='r1'): #only want one set
@@ -73,28 +72,31 @@ def get_line_sums(rich_file):
     num_pix_lines = 5 #+/- pixels used for sum
     num_pix_cont = 1
     for meta in Meta:
-        spectrum = data[meta['SPECNO']]
+        try:
+            spectrum = data[meta['SPECNO']]
 
-        #Clean data
-        ok = np.isfinite(spectrum['SKY'])
-        sky = spectrum['SKY'][ok]
-        wave = spectrum['WAVE'][ok]
+            #Clean data
+            ok = np.isfinite(spectrum['SKY'])
+            sky = spectrum['SKY'][ok]
+            wave = spectrum['WAVE'][ok]
+            lines = Lines[meta['CAMERAS']]
+            for name, info in lines.items():
+                Type, line = info
+                my_pix = np.argmin(np.abs(wave - line))
+                if Type == 'cont':
+                    flux = np.mean(sky[my_pix - num_pix_cont: my_pix + num_pix_cont]) 
+                elif Type == 'line':
+                    flux = np.sum(sky[my_pix - num_pix_lines: my_pix + num_pix_lines])
+                else: 
+                    print("not a good type")
 
-        lines = Lines[meta['CAMERAS']]
-        for name, info in lines.items():
-            Type, line = info
-            my_pix = np.argmin(np.abs(wave - line))
-            if Type == 'cont':
-                flux = np.mean(sky[my_pix - num_pix_cont: my_pix + num_pix_cont]) 
-            elif Type == 'line':
-                flux = np.sum(sky[my_pix - num_pix_lines: my_pix + num_pix_lines])
-            else: 
-                print("not a good type")
-
-            meta[name] = astropy.table.Column([flux])
+                meta[name] = astropy.table.Column([flux])
 
     #save astropy table as fits file in rich_plus
-    Meta.write(DATA_DIR+'rich_plus/%d_rich_plus.fits'%plate,format='fits')
+    rich_filen = DATA_DIR+'rich_plus/%d_rich_plus.fits'%plate
+    if os.path.exists(rich_filen):
+        os.remove(rich_filen)
+    Meta.write(rich_filen,format='fits')
 
 
 
