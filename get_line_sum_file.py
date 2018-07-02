@@ -28,13 +28,20 @@ from scipy.optimize import curve_fit
 import multiprocessing
 import pickle
 from datetime import datetime
+import speclite.filters
 
 #Identify the folder where you data is saved
 DATA_DIR = '/global/cscratch1/sd/parkerf/sky_flux_corrected/' #'/Volumes/PFagrelius_Backup/sky_data/sky_flux/'
 
 def main():
     global Lines
-    Lines = pickle.load(open(os.getcwd()+'/util/line_file_updated.pkl','rb'))
+    Lines = pickle.load(open(os.getcwd()+'/util/line_file.pkl','rb'))
+
+    vega = astropy.table.Table.read('ftp://ftp.stsci.edu/cdbs/current_calspec/alpha_lyr_stis_008.fits')
+    vegawave, vegaflux = np.array(vega["WAVELENGTH"]), np.array(vega['FLUX'])
+    global VEGA
+    VEGA = interp1d(vegawave, vegaflux, bounds_error=False, fill_value = 0)
+    
 
     if not os.path.exists(DATA_DIR+'rich_plus/'):
         os.makedirs(DATA_DIR+'rich_plus/')
@@ -57,20 +64,44 @@ def main():
     total_time = (datetime.now() - start).seconds
     print('finished %d plates in %.2f seconds' % (len(these_rich_files),total_time))
 
+def get_vmag(filt, flux, wave_range):
+
+    znum = filt.convolve_with_array(wave_range, VEGA(wave_range))
+    zden = filt.convolve_with_function(lambda wlen: u.Quantity(1))
+    zp = (znum/zden)
+    
+    mnum = filt.convolve_with_array(wave_range, flux)
+    mden = filt.convolve_with_function(lambda wlen: u.Quantity(1))
+    mp = (mnum/mden)
+    
+    M = -2.5 * np.log10(mp/zp) 
+    return M
+
 def get_line_sums(rich_file):
     print(rich_file)
     Meta = astropy.table.Table.read(rich_file)
+
+    fiber_area = np.pi
+    ugriz = speclite.filters.load_filters('sdss2010-*')
+    bessell = speclite.filters.load_filters('bessell-*') 
+
     #add columns to astropy.table for each line
     for camera, lines in Lines.items():
         if (camera == 'b1')|(camera=='r1'): #only want one set
             for name, line_info in lines.items():
                 Meta[name] = astropy.table.Column(np.zeros(len(Meta)).astype(np.float32))
+    for filt in ugriz:
+        Meta[filt.name] = astropy.table.Column(np.zeros(len(Meta)).astype(np.float32))
+    for filt in bessell:
+        Meta[filt.name] = astropy.table.Column(np.zeros(len(Meta)).astype(np.float32))
+
 
     #get spframe flux data
     plate = np.unique(Meta['PLATE'])[0]
     data = np.load(DATA_DIR+'/%d_calibrated_sky.npy'%plate)
     num_pix_lines = 5 #+/- pixels used for sum
     num_pix_cont = 1
+    
     for meta in Meta:
         try:
             spectrum = data[meta['SPECNO']]
@@ -91,6 +122,13 @@ def get_line_sums(rich_file):
                     print("not a good type")
 
                 meta[name] = astropy.table.Column([flux])
+
+            for filt in ugriz:
+                mag = filt.get_ab_magnitude(sky/fiber_area, wave*10)
+                meta[name] = astropy.table.Column([mag])
+            for filt in bessel:
+                mags = get_vmag(filt, sky/fiber_area, wave*10)
+                meta[name] = astropy.table.Column([mag])
         except:
             pass
 
@@ -99,7 +137,6 @@ def get_line_sums(rich_file):
     if os.path.exists(rich_filen):
         os.remove(rich_filen)
     Meta.write(rich_filen,format='fits')
-
 
 
 if __name__ == '__main__':
