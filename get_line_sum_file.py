@@ -91,6 +91,8 @@ def get_line_sums(rich_file):
                     print("not a good type")
 
                 meta[name] = astropy.table.Column([flux])
+        except:
+            pass
 
     #save astropy table as fits file in rich_plus
     rich_filen = DATA_DIR+'rich_plus/%d_rich_plus.fits'%plate
