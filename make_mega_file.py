@@ -7,11 +7,13 @@ import os, sys, glob
 import numpy as np
 from astropy.io import fits
 import astropy.table
+from datetime import datetime
 
 def main():
 
     file_dir = '/global/cscratch1/sd/parkerf/sky_flux/rich_mean/'
 
+    
     files = glob.glob(file_dir+'/*.fits')
     ("got %d files from %s" % (len(files), file_dir))
 
@@ -24,63 +26,71 @@ def main():
     MF = astropy.table.vstack(Mega_file)
     print("Made it into one big file")
 
-    good_MF = apply_platequality(MF)
-    good_MF.write('spframe_line_good.fits',format='fits')
-
-    clean_good_MF = data_cuts(good_MF)
-    good_MF.write('good_data_%s.fits'% date.strftime('%y%m%d'),format='fits')
-
-def apply_platequality(DataTable):
-    # Now get platequality info
+    # Remove Bad Observations
+    REMOVED = []
     pl = astropy.table.Table.read(os.getcwd()+'/util/platelist.fits')
     Pl = pl[['PLATE','MJD','PLATEQUALITY','QUALCOMMENTS']]
-    bad_plates = np.unique(Pl[Pl['PLATEQUALITY'] == 'bad ']['PLATE'])
+    bad = Pl[Pl['PLATEQUALITY'] == 'bad ']
 
-    bad_days = []
-    for plate in bad_plates:
-        this_data = Pl[(Pl['PLATE'] == plate)&(Pl['PLATEQUALITY'] == 'bad')]
-        for bad_one in this_data:
-            bad_days.append([bad_one['PLATE'],bad_one['MJD']])
-                
-    for day in bad_days:
-        try:
-            DataTable.remove_rows((MF['PLATE'] == plate)&(MF['MJD'] == bad_one['MJD']))
-        except:
-            print(bad_one)
+    bad_idx = []
+    for line in bad:
+        bad_idx.append(np.where((MF['PLATE'] == line['PLATE'])&(MF['MJD'] == line['MJD'])))
 
-    return DataTable
+    idx = np.hstack(bad_idx)
+    REMOVED.append(MF[idx[0]])
+    MF.remove_rows(idx[0])
 
-def data_cuts(DataTable):
-    #Taken from the MakeTestDataFile.ipynb
-    remove_these_plates = [5745, 6138, 7258] 
-    #5745 because sky fiber test plate
-    #6138 because for no reason given, there isn't data for r2 in all observations and some done't have r1
-    #7258 "Forced complete"
+    weird_idx = []
+    for plate in [5745, 6138, 7258]:
+        weird_idx.append(np.where(MF['PLATE'] == plate))
 
-    print('outliers in blue')
-    out1 = DataTable[(DataTable['CAMERAS'] == 'b1')&(DataTable['std_cont_b_460'] > DataTable['mean_cont_b_460'])]['PLATE','IMG','FIB']
-    out2 = DataTable[(DataTable['CAMERAS'] == 'b1')&(DataTable['cont_b_460'] <= 0)]['PLATE','IMG','FIB']
+    weird_idx = np.hstack(weird_idx)
+    REMOVED.append(MF[weird_idx[0]])
+    MF.remove_rows(weird_idx[0])
 
-    print('outliers in red')
-    out3 = DataTable[(DataTable['CAMERAS'] == 'r1')&((DataTable['std_cont_r_720'] > DataTable['mean_cont_r_720']))]['PLATE','IMG','FIB']
-    out4 = DataTable[(DataTable['CAMERAS'] == 'r1')&(DataTable['cont_r_720'] < 0)]['PLATE','IMG','FIB']
-    out5 = DataTable[(DataTable['CAMERAS'] == 'r1')&(DataTable['cont_r_720'] == 0)]['PLATE','IMG','FIB']
+    MF.write('good_data_%s.fits'% datetime.now().strftime('%y%m%d'),format='fits')
+    print("Removed bad obs")
 
-    print('stacked outliers')
-    outs = astropy.table.vstack[out1,out2,out3,out4,out5]
+    # Remove outliers
+    Lines = pickle.load(open('/global/homes/p/parkerf/Sky/SkyModelling/util/line_file_updated.pkl','rb'))
+    blue_lines = []
+    red_lines = []
+    for cam, info in lines.items():
+        if cam == 'b1':
+            for name, val in info.items():
+                blue_lines.append(name)
+        if cam == 'r1':
+            for name, val in info.items():
+                red_lines.append(name)
 
-    idx = []
-    for out in outs:
-        id0 = np.where((DataTable['IMG'] == out["IMG"])&(DataTable['FIB'] == out['FIB']))
-        idx.append(id0)
-    print('done idx')
-    idx = np.hstack(idx)
-    DataTable.remove_rows(idx[0])
-    print('done removing rows')
+    blue_all_zero = MF[((MF['CAMERAS'] == 'b1')|(MF['CAMERAS'] == 'b2'))&(MF[blue_lines[0]]==0)&(MF[blue_lines[1]]==0)&(MF[blue_lines[2]]==0)&(MF[blue_lines[3]]==0)&(MF[blue_lines[4]]==0)&(MF[blue_lines[5]]==0)&(MF[blue_lines[6]]==0)&(MF[blue_lines[7]]==0)&(MF[blue_lines[8]]==0)&(MF[blue_lines[9]]==0)&(MF[blue_lines[10]]==0)&(MF[blue_lines[11]]==0)&(MF[blue_lines[12]]==0)]
+    red_all_zero = MF[((MF['CAMERAS'] == 'r1')|(MF['CAMERAS'] == 'r2'))&(MF[red_lines[0]]==0)&(MF[red_lines[1]]==0)&(MF[red_lines[2]]==0)&(MF[red_lines[3]]==0)&(MF[red_lines[4]]==0)&(MF[red_lines[5]]==0)&(MF[red_lines[6]]==0)&(MF[red_lines[7]]==0)&(MF[red_lines[8]]==0)&(MF[red_lines[9]]==0)&(MF[red_lines[10]]==0)&(MF[red_lines[11]]==0)&(MF[red_lines[12]]==0)&(MF[red_lines[13]]==0)]
 
-    return DataTable
+    all_zero_idx = []
+    for line in blue_all_zero:
+        cam = line['CAMERAS']
+        fib = line['FIB']
+        image = line['IMG']
+        all_zero_idx.append(np.where((MF['CAMERAS'] == cam)&(MF['IMG'] == image)&(MF['FIB'] == fib)))
+    print("removed blue outliers")
 
-print('finished writing!')
+    for line in red_all_zero:
+        cam = line['CAMERAS']
+        fib = line['FIB']
+        image = line['IMG']
+        all_zero_idx.append(np.where((MF['CAMERAS'] == cam)&(MF['IMG'] == image)&(MF['FIB'] == fib)))
+    print("removed redoutliers")
+
+    all_zero_idx = np.hstack(all_zero_idx)
+    REMOVED.append(MF[all_zero_idx[0]])
+    MF.remove_rows(all_zero_idx[0])
+
+    MF.write('good_clean_data_%s.fits'% datetime.now().strftime('%y%m%d'),format='fits')
+    Removed = astropy.table.vstack(REMOVED)
+    Removed.write('removed_observations.fits', format='fits')
+
+    print("Done!")
+
 
 if __name__ == '__main__':
     main()
