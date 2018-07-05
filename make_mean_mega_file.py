@@ -7,35 +7,30 @@ import speclite.filters
 
 def main():
 
-	DIR = '/global/cscratch1/sd/parkerf/sky_flux_corrected/'
-	MEAN_META = DIR+'/mean_meta/'
+    DIR = '/global/cscratch1/sd/parkerf/sky_flux_corrected/'
+    MEAN_META = DIR+'/mean_meta/'
     if not os.path.exists(MEAN_META):
         os.makedirs(MEAN_META)
 
-	file_dir = DIR+'/mean_spectra/'
-	rich_meta_files = os.listdir(DIR+'/rich_meta/')
+    #file_dir = DIR+'/mean_spectra/'
+    #rich_meta_files = os.listdir(DIR+'/rich_meta/')
 
+    MF = astropy.table.Table.read('/global/homes/p/parkerf/Sky/SkyModelling/good_clean_data_180704.fits')
+    MF.remove_columns(['SPECNO', 'FIB', 'XFOCAL','YFOCAL','FIBER_RA','FIBER_DEC'])
 
-	global Lines
-	Lines = pickle.load(open('/global/homes/p/parkerf/Sky/SkyModelling/util/line_file.pkl','rb'))
+    global Meta
+    Meta = astropy.table.unique(MF, keys=['PLATE','IMG','CAMERAS'])
 
+    global Lines
+    Lines = pickle.load(open('/global/homes/p/parkerf/Sky/SkyModelling/util/line_file.pkl','rb'))
 
+    global ugriz
+    ugriz = speclite.filters.load_filters('sdss2010-*')
 
-	pool = multiprocessing.Pool(processes=64)
-    pool.map(make_mean_meta_file, rich_meta_files)
-    pool.terminate()
-
-    
-def make_mean_meta_file(rich_meta_file):
-	MF = astropy.table.Table.read(rich_meta_file)
-	MF.remove_columns(['SPECNO', 'FIB', 'XFOCAL','YFOCAL','FIBER_RA','FIBER_DEC'])
-	Meta = astropy.table.unique(MF, keys=['PLATE','IMG','CAMERAS'])
-	plate = np.unique(MF['PLATE'])
-
-	ugriz = speclite.filters.load_filters('sdss2010-*')
+    global bessell
     bessell = speclite.filters.load_filters('bessell-*')
-
-	#add columns to astropy.table for each line
+    
+    #add columns to astropy.table for each line
     for camera, lines in Lines.items():
         if (camera == 'b1')|(camera=='r1'): #only want one set
             for name in lines.keys():
@@ -45,13 +40,25 @@ def make_mean_meta_file(rich_meta_file):
     for filt in bessell:
         Meta[filt.name] = astropy.table.Column(np.zeros(len(Meta)).astype(np.float32))
 
-    mean_spectra_dir = file_dir+'%d' % plate
+    PLATES = np.unique(Meta['PLATE'])
 
-    for meta in Meta:
-    	image = meta['IMG']
-    	cam = meta['CAMERAS']
-    	mean_spectrum = np.load(mean_spectra_dir+'/%d_%s_mean_spectrum.npy'% (image, cam))
-    	#Clean data
+
+    pool = multiprocessing.Pool(processes=64)
+    pool.map(make_mean_meta_file, PLATES)
+    pool.terminate()
+
+    
+def make_mean_meta_file(plate):
+    
+    mean_spectra_dir = file_dir+'/%d/' % plate
+
+    ThisMeta = Meta[Meta['PLATE'] == plate]
+
+    for meta in ThisMeta:
+        image = meta['IMG']
+        cam = meta['CAMERAS']
+        mean_spectrum = np.load(mean_spectra_dir+'/%d_%s_mean_spectrum.npy'% (image, cam))
+        #Clean data
         ok = np.isfinite(mean_spectrum['SKY'])
         sky = mean_spectrum['SKY'][ok]
         wave = mean_spectrum['WAVE'][ok]
@@ -81,11 +88,11 @@ def make_mean_meta_file(rich_meta_file):
     rich_mean_filen = DATA_DIR+'mean_meta/%d_mean_meta.fits'%plate
     if os.path.exists(rich_mean_filen):
         os.remove(rich_mean_filen)
-    Meta.write(rich_mean_filen,format='fits')
+    ThisMeta.write(rich_mean_filen,format='fits')
 
 
 if __name__ == '__main__':
-	main()
+    main()
 
 
 
