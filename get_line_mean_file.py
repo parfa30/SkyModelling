@@ -28,14 +28,14 @@ import multiprocessing
 import pickle
 from datetime import datetime
 
-DATA_DIR = '/global/cscratch1/sd/parkerf/sky_flux/' #'/Volumes/PFagrelius_Backup/sky_data/sky_flux/'
+DATA_DIR = '/global/cscratch1/sd/parkerf/sky_flux_new_calib/' #'/Volumes/PFagrelius_Backup/sky_data/sky_flux/'
 
 def main():
     if not os.path.exists(DATA_DIR+'rich_mean/'):
         os.makedirs(DATA_DIR+'rich_mean/')
 
     global Lines
-    Lines = pickle.load(open(os.getcwd()+'/util/line_file_updatedZ.pkl','rb'))
+    Lines = pickle.load(open(os.getcwd()+'/util/line_file_updated.pkl','rb'))
 
    
     #Get data

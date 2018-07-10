@@ -59,7 +59,7 @@ from datetime import datetime
 #. SETUP DIRECTORIES. #
 #######################
 # identify directory to save data
-SAVE_DIR =  '/global/cscratch1/sd/parkerf/sky_flux_new_calib/'#'/scratch2/scratchdirs/parkerf/new_sky_flux/' #this is the folder where you want to save the output
+SAVE_DIR =  '/global/cscratch1/sd/parkerf/sky_flux_corrected/'#'/scratch2/scratchdirs/parkerf/new_sky_flux/' #this is the folder where you want to save the output
 
 # identify spframe directory
 BASE_DIR = '/global/projecta/projectdirs/sdss/data/sdss/dr12/boss/spectro/redux/'
@@ -92,7 +92,6 @@ def main():
     COMPLETE_DIRS = glob.glob(SAVE_DIR+'/*_calibrated_sky.npy')
     Complete_Plate_Names = [os.path.split(d)[1][0:4] for d in COMPLETE_DIRS]
     All_Plate_Names = [d[-4:] for d in PLATE_DIRS]
-
     plates_needed_idx = [i for i, x in enumerate(All_Plate_Names) if x not in Complete_Plate_Names]
     PLATES = [PLATE_DIRS[x] for x in plates_needed_idx]
 
@@ -128,12 +127,13 @@ def remove_rejects(bitmask, sky_flux):
     or such things.
     """
     bad_pix = []
+    bad_flags = ['FULLREJECT', 'COMBINEREJ', 'BADSKYFIBER','NOSKY','BADTRACE','NOPLUG','BADFLAT']
     for pix, bit in enumerate(bitmask):
         flags = b.decode_bitmask(b.SPPIXMASK,bit)
         for flag in flags:
-            if flag == 'FULLREJECT' or flag == 'COMBINEREJ':
+            if flag in bad_flags: 
                 bad_pix.append(pix)
-    sky_flux[bad_pix] = 0
+    sky_flux[bad_pix] = np.nan 
     return sky_flux
 
 def failsafe_dict(d,key):

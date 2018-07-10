@@ -29,6 +29,7 @@ import multiprocessing
 import pickle
 from datetime import datetime
 import speclite.filters
+import astropy.units as u
 
 #Identify the folder where you data is saved
 DATA_DIR = '/global/cscratch1/sd/parkerf/sky_flux_corrected/' #'/Volumes/PFagrelius_Backup/sky_data/sky_flux/'
@@ -43,12 +44,12 @@ def main():
     VEGA = interp1d(vegawave, vegaflux, bounds_error=False, fill_value = 0)
     
 
-    if not os.path.exists(DATA_DIR+'rich_plus/'):
-        os.makedirs(DATA_DIR+'rich_plus/')
+    if not os.path.exists(DATA_DIR+'line_sums/'):
+        os.makedirs(DATA_DIR+'line_sums/')
 
     #Get data. Checks is some data has already been collected
     rich_files = glob.glob(DATA_DIR+"rich_meta/*_rich_meta.fits")
-    Complete_Rich_Plus = [d[0:4] for d in os.listdir(DATA_DIR+'rich_plus/')]
+    Complete_Rich_Plus = [d[0:4] for d in os.listdir(DATA_DIR+'line_sums/')]
     All_Rich = [d[0:4] for d in os.listdir(DATA_DIR+'rich_meta/')]
     rich_plus_needed = [i for i, x in enumerate(All_Rich) if x not in Complete_Rich_Plus]
     these_rich_files = np.array(rich_files)[rich_plus_needed]
@@ -124,16 +125,19 @@ def get_line_sums(rich_file):
                 meta[name] = astropy.table.Column([flux])
 
             for filt in ugriz:
-                mag = filt.get_ab_magnitude(sky/fiber_area, wave*10)
-                meta[name] = astropy.table.Column([mag])
-            for filt in bessel:
-                mags = get_vmag(filt, sky/fiber_area, wave*10)
-                meta[name] = astropy.table.Column([mag])
+                flux, wlen = filt.pad_spectrum(1e-17*sky/fiber_area, wave*10)
+                mag = filt.get_ab_magnitude(flux,wlen)
+                meta[filt.name] = astropy.table.Column([mag])
+            for filt in bessell:
+                flux, wlen = filt.pad_spectrum(1e-17*sky/fiber_area, wave*10)
+                mag = get_vmag(filt, flux, wlen)
+                meta[filt.name] = astropy.table.Column([mag])
         except:
             pass
 
     #save astropy table as fits file in rich_plus
-    rich_filen = DATA_DIR+'rich_plus/%d_rich_plus.fits'%plate
+    rich_id = os.path.split(rich_file)[1][0:6]
+    rich_filen = DATA_DIR+'line_sums/%s_meta_with_lines.fits'%rich_id
     if os.path.exists(rich_filen):
         os.remove(rich_filen)
     Meta.write(rich_filen,format='fits')

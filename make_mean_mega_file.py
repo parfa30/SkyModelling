@@ -3,17 +3,24 @@ import numpy as np
 import os, sys, glob 
 import pickle
 import speclite.filters
+import multiprocessing
+from scipy.interpolate import interp1d
+from astropy import units as u
 
 
 def main():
 
     DIR = '/global/cscratch1/sd/parkerf/sky_flux_corrected/'
+    global MEAN_META
     MEAN_META = DIR+'/mean_meta/'
     if not os.path.exists(MEAN_META):
         os.makedirs(MEAN_META)
 
-    #file_dir = DIR+'/mean_spectra/'
     #rich_meta_files = os.listdir(DIR+'/rich_meta/')
+    vega = astropy.table.Table.read('ftp://ftp.stsci.edu/cdbs/current_calspec/alpha_lyr_stis_008.fits')
+    vegawave, vegaflux = np.array(vega["WAVELENGTH"]), np.array(vega['FLUX'])
+    global VEGA
+    VEGA = interp1d(vegawave, vegaflux, bounds_error=False, fill_value = 0)
 
     MF = astropy.table.Table.read('/global/homes/p/parkerf/Sky/SkyModelling/good_clean_data_180704.fits')
     MF.remove_columns(['SPECNO', 'FIB', 'XFOCAL','YFOCAL','FIBER_RA','FIBER_DEC'])
@@ -47,21 +54,34 @@ def main():
     pool.map(make_mean_meta_file, PLATES)
     pool.terminate()
 
+def get_vmag(filt, flux, wave_range):
+
+    znum = filt.convolve_with_array(wave_range, VEGA(wave_range))
+    zden = filt.convolve_with_function(lambda wlen: u.Quantity(1))
+    zp = (znum/zden)
     
+    mnum = filt.convolve_with_array(wave_range, flux)
+    mden = filt.convolve_with_function(lambda wlen: u.Quantity(1))
+    mp = (mnum/mden)
+    
+    M = -2.5 * np.log10(mp/zp) 
+    return M
+
+ 
 def make_mean_meta_file(plate):
     
-    mean_spectra_dir = file_dir+'/%d/' % plate
+    mean_spectra_dir = '/global/cscratch1/sd/parkerf/sky_flux_corrected/mean_spectra/%d/' % plate
+    num_pix_lines = 5 #+/- pixels used for sum
+    num_pix_cont = 1
+    fiber_area = np.pi
 
     ThisMeta = Meta[Meta['PLATE'] == plate]
-
+    #print(ThisMeta)
     for meta in ThisMeta:
         image = meta['IMG']
         cam = meta['CAMERAS']
-        mean_spectrum = np.load(mean_spectra_dir+'/%d_%s_mean_spectrum.npy'% (image, cam))
-        #Clean data
-        ok = np.isfinite(mean_spectrum['SKY'])
-        sky = mean_spectrum['SKY'][ok]
-        wave = mean_spectrum['WAVE'][ok]
+        sky = np.load(mean_spectra_dir+'/%d_%s_mean_spectrum.npy'% (image, cam))
+        wave = np.linspace(300, 1040, (1040-300)*100)
         lines = Lines[cam]
         for name, info in lines.items():
             Type, line = info
@@ -85,7 +105,7 @@ def make_mean_meta_file(plate):
             meta[filt.name] = astropy.table.Column([mag])
 
     #save astropy table as fits file in rich_plus
-    rich_mean_filen = DATA_DIR+'mean_meta/%d_mean_meta.fits'%plate
+    rich_mean_filen = MEAN_META+'/%d_mean_meta.fits'%plate
     if os.path.exists(rich_mean_filen):
         os.remove(rich_mean_filen)
     ThisMeta.write(rich_mean_filen,format='fits')
