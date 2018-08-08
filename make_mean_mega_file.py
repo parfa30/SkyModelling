@@ -22,7 +22,7 @@ def main():
     global VEGA
     VEGA = interp1d(vegawave, vegaflux, bounds_error=False, fill_value = 0)
 
-    MF = astropy.table.Table.read('/global/homes/p/parkerf/Sky/SkyModelling/good_clean_data_180704.fits')
+    MF = astropy.table.Table.read('/global/homes/p/parkerf/Sky/SkyModelling/data_files/good_clean_data_180713.fits')
     MF.remove_columns(['SPECNO', 'FIB', 'XFOCAL','YFOCAL','FIBER_RA','FIBER_DEC'])
 
     global Meta
@@ -85,6 +85,7 @@ def make_mean_meta_file(plate):
         lines = Lines[cam]
         for name, info in lines.items():
             Type, line = info
+            line = float(line)
             my_pix = np.argmin(np.abs(wave - line))
             if Type == 'cont':
                 flux = np.mean(sky[my_pix - num_pix_cont: my_pix + num_pix_cont])

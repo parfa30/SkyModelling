@@ -25,7 +25,7 @@ def main():
 
     blue_dict = {}
     for name, l in blue_lines.items():
-        wave = air_to_vac(l)
+        wave = air_to_vac(l)/10.
         blue_dict[name] = ['line','%.2f' % wave]
     for cline in blue_cont:
         name = 'cont_b_%s' % str(cline)
@@ -33,7 +33,7 @@ def main():
 
     red_dict = {}
     for name, l in red_lines.items():
-        wave = air_to_vac(l)
+        wave = air_to_vac(l)/10.
         red_dict[name] = ['line','%.2f' % wave]
     for cline in red_cont:
         name = 'cont_b_%s' % str(cline)

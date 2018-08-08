@@ -11,22 +11,32 @@ from lmfit import models, Parameters, Parameter, Model
 from lmfit.models import LinearModel, ConstantModel
 
 def main():
-    SPECTRA_DIR = '/Volumes/PFagrelius_Backup/sky_data/sky_mean_spectra/'
+    SPECTRA_DIR = '/global/cscratch1/sd/parkerf/sky_flux_corrected/mean_spectra/'
     mean_blue_files = glob.glob(SPECTRA_DIR + '/*/*_b*_mean_spectrum.npy', recursive=True)
 
     global SAVE_DIR
-    SAVE_DIR = '/Volumes/PFagrelius_Backup/sky_data/sky_mean_spectra/mean_cont_spectra/'
+    SAVE_DIR = SPECTRA_DIR + '/mean_cont_spectra/'
+    done_blue_files = glob.glob(SAVE_DIR + '/*/*_b*.npy', recursive=True)
+
+    Complete_Images = [os.path.split(d)[1][0:9] for d in done_blue_files]
+    All_Images = [os.path.split(d)[1][0:9] for d in mean_blue_files]
+    images_needed_idx = [i for i, x in enumerate(All_Images) if x not in Complete_Images]
+    IMAGES = [mean_blue_files[x] for x in images_needed_idx]
+    print("All files",len(mean_blue_files))
+    print("Done files",len(done_blue_files))
+    print("Needed files",len(IMAGES))
+    print(IMAGES)
 
     global mean_wave
     mean_wave = np.linspace(300, 1040, (1040-300)*100)
 
     # Get Lines
     global blue_airglow_lines
-    blue_airglow_lines = np.load('/Users/parkerf/Research/SkyModel/BOSS_Sky/ContFitting/files/blue_airglow_lines.npy')
+    blue_airglow_lines = np.load('util/blue_airglow_lines.npy')
     print(blue_airglow_lines)
 
-    pool = multiprocessing.Pool(processes=2)
-    pool.map(save_new_file, mean_blue_files)
+    pool = multiprocessing.Pool(processes=64)
+    pool.map(save_new_file, IMAGES)
     pool.close()
 
     # for file in mean_blue_files[1:6]:
@@ -51,7 +61,6 @@ def save_new_file(filen):
         spec['FILT_CONT'] = filtered_spectrum
 
         folder = SAVE_DIR+'/'+plate+'/'
-        print(folder)
         if not os.path.exists(folder):
             os.makedirs(folder)
 

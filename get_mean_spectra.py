@@ -5,7 +5,7 @@ import pickle
 import os, sys, glob
 from scipy.interpolate import interp1d
 
-MetaFile = 'good_clean_data_180704.fits'
+MetaFile = 'data_files/good_clean_data_180704.fits'
 DIR = '/global/cscratch1/sd/parkerf/sky_flux_corrected/'
 
 def main():
@@ -16,8 +16,15 @@ def main():
 
     global MF
     MF = astropy.table.Table.read(MetaFile)
+    needed_images = np.load('needed_images.npy')
 
-    PLATES = np.unique(MF['PLATE'])
+    newMF = []
+    for image in needed_images:
+        newMF.append(MF[MF['IMG']==image])
+    newMF = astropy.table.vstack(newMF)
+    print(np.unique(newMF['PLATE']))
+
+    PLATES = np.unique(newMF['PLATE'])
 
     pool = multiprocessing.Pool(processes=64)
     pool.map(make_mean_spectrum, PLATES)

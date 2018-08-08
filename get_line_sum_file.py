@@ -114,6 +114,7 @@ def get_line_sums(rich_file):
             lines = Lines[meta['CAMERAS']]
             for name, info in lines.items():
                 Type, line = info
+                line = float(line)
                 my_pix = np.argmin(np.abs(wave - line))
                 if Type == 'cont':
                     flux = np.mean(sky[my_pix - num_pix_cont: my_pix + num_pix_cont]) 
