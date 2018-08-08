@@ -1,3 +1,20 @@
+"""
+Title: Get Mean Spectra for SpFrame Flux files
+Author: P. Fagrelius
+Date: August, 2018
+
+Description: This script makes mean spectra from the spframe files saved in SKY_FLUX_DIR. 
+They are saved by observation (image, camera). Each spectrum is on wavelength grid of 
+xx = np.linspace(300, 1040, (1040-300)*100)
+
+
+==HOW TO RUN==
+
+Run on nersc, with a python distribution that includes numpy, astropy, and scipy
+python ./get_line_sum_file.py
+
+"""
+
 import astropy.table
 import numpy as np 
 import multiprocessing
@@ -5,43 +22,44 @@ import pickle
 import os, sys, glob
 from scipy.interpolate import interp1d
 
-MetaFile = 'data_files/good_clean_data_180704.fits'
-DIR = '/global/cscratch1/sd/parkerf/sky_flux_corrected/'
+try:
+    DATA_DIR = os.environ['SKY_FLUX_DIR']
+except KeyError:
+    print("Need to set SKY_FLUX_DIR\n export SKY_FLUX_DIR=`Directory to save data'")
+
+MEAN_DIR = DATA_DIR+'/mean_spectra/'
+if not os.path.exists(MEAN_META):
+    os.makedirs(MEAN_META)
+
 
 def main():
 
-    MEAN_DIR = DIR+'/mean_spectra/'
-    if not os.path.exists(MEAN_DIR):
-        os.makedirs(MEAN_DIR)
-
-    global MF
-    MF = astropy.table.Table.read(MetaFile)
-    needed_images = np.load('needed_images.npy')
-
-    newMF = []
-    for image in needed_images:
-        newMF.append(MF[MF['IMG']==image])
-    newMF = astropy.table.vstack(newMF)
-    print(np.unique(newMF['PLATE']))
-
-    PLATES = np.unique(newMF['PLATE'])
+    #Get data. Checks is some data has already been collected
+    spframe_files = glob.glob(DATA_DIR+"/*_calibrated_flux.npy")
+    Complete_Rich_Plus = [d[0:4] for d in os.listdir(MEAN_DIR)]
+    All_Rich = [d[0:4] for d in os.listdir(DATA_DIR+'*.npy')]
+    rich_plus_needed = [i for i, x in enumerate(All_Rich) if x not in Complete_Rich_Plus]
+    these_spframe_files = np.array(spframe_files)[rich_plus_needed]
+    print("Getting line sum data for %d files" % len(these_spframe_files))
 
     pool = multiprocessing.Pool(processes=64)
-    pool.map(make_mean_spectrum, PLATES)
+    pool.map(make_mean_spectrum, these_spframe_files)
     pool.terminate()
 
 def nan_helper(y):
     return np.isnan(y), lambda z: z.nonzero()[0]
 
-def make_mean_spectrum(plate):
-    data = np.load(DIR+'%d_calibrated_sky.npy' % plate)
+def make_mean_spectrum(spframe_filen):
+
+    plate = int(os.path.split(spframe_filen)[1][0:4])
+    data = np.load(spframe_filen)
     xx = np.linspace(300, 1040, (1040-300)*100)
 
-    PLATE_DIR = DIR+'/mean_spectra/%d' % plate
+    PLATE_DIR = MEAN_DIR/'%d' % plate
     if not os.path.exists(PLATE_DIR):
         os.makedirs(PLATE_DIR)
 
-    image_meta = MF[MF['PLATE']==plate]
+    image_meta = np.load(DATA_DIR+'/raw_meta/%_raw_meta.npy' % plate)
     for image in np.unique(image_meta['IMG']):
         for cam in ['b1','b2','r1','r2']:
             these_specnos = image_meta[(image_meta['IMG'] == image)&(image_meta['CAMERAS'] == cam)]['SPECNO']

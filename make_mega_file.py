@@ -9,14 +9,37 @@ from astropy.io import fits
 import astropy.table
 from datetime import datetime
 import pickle
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--full", type=str,
+                    help="determines that want a merged file for all sky meta data")
+parser.add_argument("--mean", type=str,
+                    help="determines that want a merged file for only mean sky spectra meta data")
+args = parser.parse_args()
+
+try:
+    DATA_DIR = os.environ['SKY_FLUX_DIR']
+except KeyError:
+    print("Need to set SKY_FLUX_DIR\n export SKY_FLUX_DIR=`Directory to save data'")
 
 def main():
-    """
-    file_dir = '/global/cscratch1/sd/parkerf/sky_flux_corrected/line_sums/'
-    
-    files = glob.glob(file_dir+'/*.fits')
-    ("got %d files from %s" % (len(files), file_dir))
 
+    if args.full:
+        file_dir = DATA_DIR+ '/rich_plus_meta/'
+        filen = 'meta_data_%s.fits'% datetime.now().strftime('%y%m%d')
+    elif args.mean:
+        file_dir = DATA_DIR+ '/mean_meta/'
+        filen = 'mean_meta_data_%s.fits'% datetime.now().strftime('%y%m%d')
+    else:
+        print("No file set was selected. Creating mean file for rich meta")
+        file_dir = DATA_DIR+ '/rich_meta/'
+        filen = 'rich_meta_data_%s.fits'% datetime.now().strftime('%y%m%d')
+    files = glob.glob(file_dir + '/*.fits')
+
+    print("got %d files from %s" % (len(files), file_dir))
+
+    #Load all files
     Mega_file = []
     for filen in files:
         try:
@@ -27,7 +50,7 @@ def main():
     print("Got all the data")
 
     MF = astropy.table.vstack(Mega_file)
-    MF.write('all_data_%s.fits'% datetime.now().strftime('%y%m%d'),format='fits')
+    MF.write(DATA_DIR+'/all_'+filen,format='fits')
     print("Made it into one big file")
 
     print("All images")
@@ -57,13 +80,11 @@ def main():
     REMOVED.append(MF[weird_idx[0]])
     MF.remove_rows(weird_idx[0])
 
-    MF.write('good_data_%s.fits'% datetime.now().strftime('%y%m%d'),format='fits')
+    MF.write(DATA_DIR+'/good_'+filen,format='fits')
     print("Removed bad obs")
-    """
-    MF = astropy.table.Table.read('good_data_180712.fits')
 
     # Remove outliers
-    Lines = pickle.load(open('/global/homes/p/parkerf/Sky/SkyModelling/util/line_file.pkl','rb'))
+    Lines = pickle.load(open(os.getcwd()+'/util/line_file.pkl','rb'))
     blue_lines = []
     red_lines = []
     for cam, info in Lines.items():
@@ -94,12 +115,12 @@ def main():
     print("removed redoutliers")
 
     all_zero_idx = np.hstack(all_zero_idx)
-    #REMOVED.append(MF[all_zero_idx[0]])
+    REMOVED.append(MF[all_zero_idx[0]])
     MF.remove_rows(all_zero_idx[0])
 
-    MF.write('good_clean_data_%s.fits'% datetime.now().strftime('%y%m%d'),format='fits')
-    #Removed = astropy.table.vstack(REMOVED)
-    #Removed.write('removed_observations_180712.fits', format='fits')
+    MF.write(DATA_DIR+'/good_clean_'+filen,format='fits')
+    Removed = astropy.table.vstack(REMOVED)
+    Removed.write('removed_observations_%s.fits'% datetime.now().strftime('%y%m%d'), format='fits')
 
     print("All images after removal")
     print("Total Plates: " % len(np.unique(MF['PLATE'])))

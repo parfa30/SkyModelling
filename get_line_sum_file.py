@@ -1,7 +1,7 @@
 """
 Title: Get Line Sum for SpFrame Files
 Author: P. Fagrelius
-Date: April, 2018
+Date: August, 2018
 
 Description: This file takes the rich meta files and the spframe files and measures the
 line strenghts and mean continuum values of those listed below, and then save all this
@@ -32,7 +32,14 @@ import speclite.filters
 import astropy.units as u
 
 #Identify the folder where you data is saved
-DATA_DIR = '/global/cscratch1/sd/parkerf/sky_flux_corrected/' #'/Volumes/PFagrelius_Backup/sky_data/sky_flux/'
+try:
+    DATA_DIR = os.environ['SKY_FLUX_DIR']
+except KeyError:
+    print("Need to set SKY_FLUX_DIR\n export SKY_FLUX_DIR=`Directory to save data'") 
+
+SAVE_DIR = DATA_DIR+'/rich_plus_meta/'
+if not os.path.exists(SAVE_DIR):
+    os.makedirs(SAVE_DIR)
 
 def main():
     global Lines
@@ -44,12 +51,9 @@ def main():
     VEGA = interp1d(vegawave, vegaflux, bounds_error=False, fill_value = 0)
     
 
-    if not os.path.exists(DATA_DIR+'line_sums/'):
-        os.makedirs(DATA_DIR+'line_sums/')
-
     #Get data. Checks is some data has already been collected
     rich_files = glob.glob(DATA_DIR+"rich_meta/*_rich_meta.fits")
-    Complete_Rich_Plus = [d[0:4] for d in os.listdir(DATA_DIR+'line_sums/')]
+    Complete_Rich_Plus = [d[0:4] for d in os.listdir(SAVE_DIR)]
     All_Rich = [d[0:4] for d in os.listdir(DATA_DIR+'rich_meta/')]
     rich_plus_needed = [i for i, x in enumerate(All_Rich) if x not in Complete_Rich_Plus]
     these_rich_files = np.array(rich_files)[rich_plus_needed]
@@ -66,7 +70,8 @@ def main():
     print('finished %d plates in %.2f seconds' % (len(these_rich_files),total_time))
 
 def get_vmag(filt, flux, wave_range):
-
+    """Calculates vega magnitudes
+    """
     znum = filt.convolve_with_array(wave_range, VEGA(wave_range))
     zden = filt.convolve_with_function(lambda wlen: u.Quantity(1))
     zp = (znum/zden)
@@ -95,7 +100,6 @@ def get_line_sums(rich_file):
         Meta[filt.name] = astropy.table.Column(np.zeros(len(Meta)).astype(np.float32))
     for filt in bessell:
         Meta[filt.name] = astropy.table.Column(np.zeros(len(Meta)).astype(np.float32))
-
 
     #get spframe flux data
     plate = np.unique(Meta['PLATE'])[0]
@@ -138,7 +142,7 @@ def get_line_sums(rich_file):
 
     #save astropy table as fits file in rich_plus
     rich_id = os.path.split(rich_file)[1][0:6]
-    rich_filen = DATA_DIR+'line_sums/%s_meta_with_lines.fits'%rich_id
+    rich_filen = SAVE_DIR+'/%s_meta_with_lines.fits'%rich_id
     if os.path.exists(rich_filen):
         os.remove(rich_filen)
     Meta.write(rich_filen,format='fits')

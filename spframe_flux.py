@@ -5,7 +5,8 @@ Title: SpFrame flux conversion
 Author: P. Fagrelius, A. Slosar
 
 Version:
-3.1 Apr, 2108 P. Fagrelius fixed Sky fiber issue. 
+4.0 Aug, 2018 P. Fagrelius Version used for thesis. Includes new calib file
+3.1 Apr, 2018 P. Fagrelius fixed Sky fiber issue. 
 3.0 Jun, 2017 Modification of flux calculation and removal of flagged pixels (Parker)
 2.1 Mar, 2017 Refactoring by A. Slosar
 1.0 Apri, 2017 P. Fagrelius
@@ -15,13 +16,13 @@ This code takes the spectra from spFrame BOSS files and converts it into flux si
 Flux output is 10^-17 ergs/s/cm2/A.
 
 This conversion is made only for "sky" fibers as identified in the plug list in spframe files hdu[5]. These have 
-OBJTYPE=SKY. A full list of all sky fibers is saved in a numpy file 'sky_fibers.npy' with associated plate and camera.
+OBJTYPE=SKY. 
 
-he flux is converted with the equation spflux = eflux[spFrame[0]]/spCalib.
-This is equal to spcframe flux without correction and distortion included. i.e spflux = spcflux/(corr*distort*R)
+The flux is converted with the equation spflux = eflux[spFrame[0]]* (R/spCalib).
+This is equal to spcframe flux without correction and distortion included. i.e spflux = spcflux/(corr*distort)
 
 We are using only one calibration file for all conversions, which was selected from a good seeing day. This reduces
-the amount of PSF correction applied.
+the amount of PSF correction applied. The final flux is then multiplied by 1.027 to account for the losses due to seeing.
 
 ==Outputs==
 Running this code generates two numpy files:
@@ -39,7 +40,6 @@ Best to run on nersc. Location of BOSS data is under BASE_DIR. Identify the dire
 
 To run in python, requires numpy, astropy, and multiprocessing.
 
-srun -n 1 -c 64 python ./spframe_flux.py
 
 """
 from __future__ import print_function,division
@@ -59,9 +59,12 @@ from datetime import datetime
 #. SETUP DIRECTORIES. #
 #######################
 # identify directory to save data
-SAVE_DIR =  '/global/cscratch1/sd/parkerf/sky_flux_corrected/'#'/scratch2/scratchdirs/parkerf/new_sky_flux/' #this is the folder where you want to save the output
+try:
+	SAVE_DIR = os.environ['SKY_FLUX_DIR']
+except KeyError:
+	print("Need to set SKY_FLUX_DIR\n export SKY_FLUX_DIR=`Directory to save data'")
 
-# identify spframe directory
+	# identify spframe directory
 BASE_DIR = '/global/projecta/projectdirs/sdss/data/sdss/dr12/boss/spectro/redux/'
 FOLDERS = ['v5_7_0/','v5_7_2/']
 
@@ -77,6 +80,7 @@ get_meta = True
 def main():
    
     start_time = datetime.now().strftime('%y%m%d-%H%M%S')
+
     
     #Collect directories for each plate for each folder in the spframe director
     PLATE_DIRS = []
