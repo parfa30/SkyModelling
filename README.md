@@ -37,17 +37,17 @@ All code is in python. You will need the following packages:
 
 ## How to get your own sky flux dataset
 * Clone this repo to nersc
-* Identify a location to save your data and modify spframe_flux.py. `export SKY_FLUX_DIR=$SCRATCH/sky_flux'
-* Run `spframe_flux.py' on one node (on interactive or debug). `python spframe_flux.py`. If you run out of time you can just run it again. It will figure out how many files you have to go.This will output 2 .npy files for each plate: "SKY_FLUX_DIR/PLATE_calibrated_sky.npy" and "SKY_FLUX_DIR/raw_meta/PLATE_raw_meta.npy"
-* When complete, run get_rich_meta_data.py. This is best to be run with multiprocessing with max number of processes. There is one section that takes longer that can be commented out in the code if you want less meta information. You can restart this file again as it counts what files have already been converted from raw_meta to rich_meta.
-* Run get_rich_meta_data.py `python get_rich_meta_data.py`. This will give you a new set of files under SKY_FLUX_DIR/rich_meta. Should take ~25 minutes if used 64 cores.
-* Run get_line_sum_file.py. This will give you a new set of files under SKY_FLUX_DIR/rich_plus with all the line strength info. 
-* Run make_mega_file.py for all this data. This will save two astropy fits tables (.fits): SKY_FLUX_DIR/all_meta_data_YYMMDD.fits which contains all sky fiber data; SKY_FLUX_DIR/good_meta_data_YYMMDD.fits which throws out `bad` observations and saves one meta file with all good spectra. Run as: `python make_mega_file.py --full
+* Identify a location to save your data and modify spframe_flux.py. `export SKY_FLUX_DIR=$SCRATCH/sky_flux`
+* Run `spframe_flux.py' on one node (on interactive or debug). `python spframe_flux.py`. If you run out of time you can just run it again. It will figure out how many files you have to go.This will output 2 .npy files for each plate: `SKY_FLUX_DIR/PLATE_calibrated_sky.npy` and `SKY_FLUX_DIR/raw_meta/PLATE_raw_meta.npy`
+* `python get_rich_meta_data.py` This is best to be run with multiprocessing with max number of processes. There is one section that takes longer that can be commented out in the code if you want less meta information. You can restart this file again as it counts what files have already been converted from raw_meta to rich_meta. THe output is a new set of files under `SKY_FLUX_DIR/rich_meta`
+* `python get_line_sum_file.py` This will give you a new set of files under `SKY_FLUX_DIR/rich_plus` with all the line strength info. It will pull the flux for all lines and continuum bands in `line_file.pkl`.
+* `python make_mega_file.py --full` for all this data. This will save two astropy fits tables (.fits): `SKY_FLUX_DIR/all_meta_data_YYMMDD.fits` which contains all sky fiber data; `SKY_FLUX_DIR/good_meta_data_YYMMDD.fits` which throws out `bad' observations and saves one meta file with all good spectra. 
 
 ## Get mean spectra data set:
-* Run get_mean_spectra.py. This will give you mean spectrum for each observation (image/camera). The spectra will be saved as SKY_FLUX_DIR/PLATE/IMAGE_CAM_mean_spectrum.py. A mean variance file is also saved.
-* Run get_mean_meta_file.py. This is the same as get_line_sum_file.py but measured the line strength only for these mean spectra. Starts with a rich meta file and the mean spectra and resaves the meta file.
-* Run make_mega_file.py for the mean spectra: `python make_mega_file.py --mean`. This will save files SKY_FLUX_DIR/mean_meta_data_YYMMDD.fits and SKY_FLUX_DIR/good_mean_meta_data_YYMMDD.fits.
+* Make sure `SKY_FLUX_DIR` is still identified and exported
+* `python get_mean_spectra.py` This will give you mean spectrum for each observation (image/camera). The spectra will be saved as `SKY_FLUX_DIR/PLATE/IMAGE_CAM_mean_spectrum.npy`. A mean variance file is also saved.
+* `python get_mean_meta_file.py` This is the same as `get_line_sum_file.py` but measures the line strength only for these mean spectra. Starts with a rich meta file and the mean spectra and resaves the meta file.
+* `python make_mega_file.py --mean` for the mean spectra. This will save files `SKY_FLUX_DIR/mean_meta_data_YYMMDD.fits` and `SKY_FLUX_DIR/good_mean_meta_data_YYMMDD.fits`.
 
 
 ## How to fit your sky spectra

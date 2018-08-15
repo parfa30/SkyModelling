@@ -67,9 +67,9 @@ except KeyError:
 ###############
 
 def main():
-
-    if not os.path.exists(RAW_META_DATA_DIR+'rich_meta/'):
-        os.makedirs(RAW_META_DATA_DIR+'rich_meta/')
+    print(RAW_META_DATA_DIR)
+    if not os.path.exists(RAW_META_DATA_DIR+'/rich_meta/'):
+        os.makedirs(RAW_META_DATA_DIR+'/rich_meta/')
 
     start = datetime.now()
     # Get Solar Flux Data

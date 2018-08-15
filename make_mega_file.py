@@ -12,9 +12,9 @@ import pickle
 import argparse
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--full", type=str,
+parser.add_argument("--full", action='store_true',
                     help="determines that want a merged file for all sky meta data")
-parser.add_argument("--mean", type=str,
+parser.add_argument("--mean", action='store_true',
                     help="determines that want a merged file for only mean sky spectra meta data")
 args = parser.parse_args()
 
@@ -41,15 +41,16 @@ def main():
 
     #Load all files
     Mega_file = []
-    for filen in files:
+    for ff in files:
         try:
-    	    d = astropy.table.Table.read(filen)
+    	    d = astropy.table.Table.read(ff)
     	    Mega_file.append(d)
         except:
-            print(filen)
+            print(ff)
     print("Got all the data")
 
     MF = astropy.table.vstack(Mega_file)
+    print(DATA_DIR+'/all_'+filen)
     MF.write(DATA_DIR+'/all_'+filen,format='fits')
     print("Made it into one big file")
 
@@ -114,18 +115,20 @@ def main():
         all_zero_idx.append(np.where((MF['CAMERAS'] == cam)&(MF['IMG'] == image)&(MF['FIB'] == fib)))
     print("removed redoutliers")
 
-    all_zero_idx = np.hstack(all_zero_idx)
-    REMOVED.append(MF[all_zero_idx[0]])
-    MF.remove_rows(all_zero_idx[0])
-
+    try:
+        all_zero_idx = np.hstack(all_zero_idx)
+        REMOVED.append(MF[all_zero_idx[0]])
+        MF.remove_rows(all_zero_idx[0])
+    except:
+        print('no outliers to remove')
     MF.write(DATA_DIR+'/good_clean_'+filen,format='fits')
     Removed = astropy.table.vstack(REMOVED)
-    Removed.write('removed_observations_%s.fits'% datetime.now().strftime('%y%m%d'), format='fits')
+    Removed.write(DATA_DIR+'/removed_observations_%s.fits'% datetime.now().strftime('%y%m%d'), format='fits')
 
     print("All images after removal")
-    print("Total Plates: " % len(np.unique(MF['PLATE'])))
-    print("Total Obs: " % len(np.unique(MF['IMG'])))
-    print("Total Days: " % len(np.unique(MF['MJD'])))
+    print("Total Plates: ", len(np.unique(MF['PLATE'])))
+    print("Total Obs: ", len(np.unique(MF['IMG'])))
+    print("Total Days: ", len(np.unique(MF['MJD'])))
 
     print("Done!")
 

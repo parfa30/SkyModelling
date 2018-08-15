@@ -28,16 +28,16 @@ except KeyError:
     print("Need to set SKY_FLUX_DIR\n export SKY_FLUX_DIR=`Directory to save data'")
 
 MEAN_DIR = DATA_DIR+'/mean_spectra/'
-if not os.path.exists(MEAN_META):
-    os.makedirs(MEAN_META)
+if not os.path.exists(MEAN_DIR):
+    os.makedirs(MEAN_DIR)
 
 
 def main():
 
     #Get data. Checks is some data has already been collected
-    spframe_files = glob.glob(DATA_DIR+"/*_calibrated_flux.npy")
+    spframe_files = glob.glob(DATA_DIR+"/*_calibrated_sky.npy")
     Complete_Rich_Plus = [d[0:4] for d in os.listdir(MEAN_DIR)]
-    All_Rich = [d[0:4] for d in os.listdir(DATA_DIR+'*.npy')]
+    All_Rich = [d[0:4] for d in spframe_files]
     rich_plus_needed = [i for i, x in enumerate(All_Rich) if x not in Complete_Rich_Plus]
     these_spframe_files = np.array(spframe_files)[rich_plus_needed]
     print("Getting line sum data for %d files" % len(these_spframe_files))
@@ -55,13 +55,13 @@ def make_mean_spectrum(spframe_filen):
     data = np.load(spframe_filen)
     xx = np.linspace(300, 1040, (1040-300)*100)
 
-    PLATE_DIR = MEAN_DIR/'%d' % plate
+    PLATE_DIR = MEAN_DIR+'/%d' % plate
     if not os.path.exists(PLATE_DIR):
         os.makedirs(PLATE_DIR)
 
-    image_meta = np.load(DATA_DIR+'/raw_meta/%_raw_meta.npy' % plate)
+    image_meta = np.load(DATA_DIR+'/raw_meta/%d_raw_meta.npy' % plate)
     for image in np.unique(image_meta['IMG']):
-        for cam in ['b1','b2','r1','r2']:
+        for cam in np.unique(image_meta['CAMERAS']):
             these_specnos = image_meta[(image_meta['IMG'] == image)&(image_meta['CAMERAS'] == cam)]['SPECNO']
             SKY_SPECTRA = []
             VARS = []
@@ -69,16 +69,18 @@ def make_mean_spectrum(spframe_filen):
                 spectrum = data[specno]
                 sky = spectrum['SKY']
                 nans, x = nan_helper(sky)
-                sky[nans]= np.interp(x(nans), x(~nans), sky[~nans])
-                f = interp1d(spectrum['WAVE'], sky, bounds_error=False, fill_value=0)
-                g = interp1d(spectrum['WAVE'], spectrum['IVAR'], bounds_error=False, fill_value=0)
-                SKY_SPECTRA.append(f(xx))
-                VARS.append(g(xx))
-            
+                try:
+                    sky[nans]= np.interp(x(nans), x(~nans), sky[~nans])
+                    f = interp1d(spectrum['WAVE'], sky, bounds_error=False, fill_value=0)
+                    g = interp1d(spectrum['WAVE'], spectrum['IVAR'], bounds_error=False, fill_value=0)
+                    SKY_SPECTRA.append(f(xx))
+                    VARS.append(g(xx))
+                except:
+                    print(image, cam)
             mean_spectrum = np.ma.average(np.array(SKY_SPECTRA), axis=0, weights=np.array(VARS))
             mean_var = np.average(np.array(VARS), axis=0)
-            mean_spectrum.dump(PLATE_DIR+'/%d_%s_mean_spectrum.npy'% (image, cam))
-            mean_var.dump(PLATE_DIR+'/%d_%s_mean_var.npy'% (image, cam))
+            mean_spectrum.dump(PLATE_DIR+'/%d_%s_mean_spectrum.npy'% (image, str(cam)[2:4]))
+            mean_var.dump(PLATE_DIR+'/%d_%s_mean_var.npy'% (image, str(cam)[2:4]))
 
 
 if __name__ == '__main__':

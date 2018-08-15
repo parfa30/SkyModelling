@@ -37,7 +37,7 @@ if not os.path.exists(MEAN_META):
 def main():
 
     #Information to measure broadband magnitudes
-    vega = astropy.table.Table.read('ftp://ftp.stsci.edu/cdbs/current_calspec/alpha_lyr_stis_008.fits')
+    vega = astropy.table.Table.read('util/alpha_lyr_stis_008.fits')
     vegawave, vegaflux = np.array(vega["WAVELENGTH"]), np.array(vega['FLUX'])
     global VEGA
     VEGA = interp1d(vegawave, vegaflux, bounds_error=False, fill_value = 0)
@@ -52,9 +52,9 @@ def main():
 
 
     #Get data. Checks is some data has already been collected
-    rich_files = glob.glob(DATA_DIR+"rich_meta/*_rich_meta.fits")
+    rich_files = glob.glob(DATA_DIR+"/rich_meta/*_rich_meta.fits")
     Complete_Rich_Plus = [d[0:4] for d in os.listdir(MEAN_META)]
-    All_Rich = [d[0:4] for d in os.listdir(DATA_DIR+'rich_meta/')]
+    All_Rich = [d[0:4] for d in os.listdir(DATA_DIR+'/rich_meta/')]
     rich_plus_needed = [i for i, x in enumerate(All_Rich) if x not in Complete_Rich_Plus]
     these_rich_files = np.array(rich_files)[rich_plus_needed]
     print("Getting line sum data for %d files" % len(these_rich_files))
@@ -84,7 +84,7 @@ def make_mean_meta_file(rich_filen):
     #Get meta data and just pull the unique observation
     Meta = astropy.table.Table.read(rich_filen)
     Meta.remove_columns(['SPECNO', 'FIB', 'XFOCAL','YFOCAL','FIBER_RA','FIBER_DEC'])
-    ThisMeta = astropy.table.unique(MF, keys=['PLATE','IMG','CAMERAS'])
+    ThisMeta = astropy.table.unique(Meta, keys=['PLATE','IMG','CAMERAS'])
     plate = np.unique(ThisMeta['PLATE'])[0]
     print(plate)
 
@@ -99,7 +99,7 @@ def make_mean_meta_file(rich_filen):
         ThisMeta[filt.name] = astropy.table.Column(np.zeros(len(ThisMeta)).astype(np.float32))
 
     
-    mean_spectra_dir = DATADIR+'/mean_spectra/%d/' % plate
+    mean_spectra_dir = DATA_DIR+'/mean_spectra/%d/' % plate
     num_pix_lines = 5 #+/- pixels used for sum
     num_pix_cont = 1
     fiber_area = np.pi

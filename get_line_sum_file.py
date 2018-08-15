@@ -52,9 +52,9 @@ def main():
     
 
     #Get data. Checks is some data has already been collected
-    rich_files = glob.glob(DATA_DIR+"rich_meta/*_rich_meta.fits")
+    rich_files = glob.glob(DATA_DIR+"/rich_meta/*_rich_meta.fits")
     Complete_Rich_Plus = [d[0:4] for d in os.listdir(SAVE_DIR)]
-    All_Rich = [d[0:4] for d in os.listdir(DATA_DIR+'rich_meta/')]
+    All_Rich = [d[0:4] for d in os.listdir(DATA_DIR+'/rich_meta/')]
     rich_plus_needed = [i for i, x in enumerate(All_Rich) if x not in Complete_Rich_Plus]
     these_rich_files = np.array(rich_files)[rich_plus_needed]
     print("Getting line sum data for %d files" % len(these_rich_files))
